@@ -2,95 +2,114 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+/* ZULIM - Forest/Earth GIS Professional Design System */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Forest Green Palette */
+    --background: 140 15% 97%;
+    --foreground: 150 40% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 150 40% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 150 40% 12%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Deep Forest Primary */
+    --primary: 152 44% 18%;
+    --primary-foreground: 140 30% 95%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Soft Sage Secondary */
+    --secondary: 140 25% 94%;
+    --secondary-foreground: 152 44% 18%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 140 15% 92%;
+    --muted-foreground: 150 15% 45%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Earth Accent */
+    --accent: 145 50% 42%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 140 20% 88%;
+    --input: 140 20% 88%;
+    --ring: 152 44% 18%;
 
     --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 98%;
+    /* Sidebar - Forest theme */
+    --sidebar-background: 152 44% 18%;
+    --sidebar-foreground: 140 30% 92%;
+    --sidebar-primary: 145 50% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 152 35% 24%;
+    --sidebar-accent-foreground: 140 30% 95%;
+    --sidebar-border: 152 30% 25%;
+    --sidebar-ring: 145 50% 42%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    /* Custom ZULIM Colors */
+    --forest-dark: 152 44% 18%;
+    --forest-mid: 145 40% 30%;
+    --forest-light: 145 50% 42%;
+    --sage: 140 25% 85%;
+    --sage-light: 140 30% 95%;
+    --earth-brown: 30 35% 40%;
+    --earth-tan: 35 30% 75%;
+    --warning-amber: 40 95% 55%;
+    --info-teal: 175 60% 42%;
+    --success-green: 142 71% 45%;
 
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Spatial Layer Colors */
+    --layer-continuous: 145 50% 42%;
+    --layer-classified: 200 80% 50%;
+    --layer-accuracy: 142 71% 45%;
+    --layer-residual: 25 95% 55%;
+    --layer-uncertainty: 280 70% 50%;
+    --layer-rpe: 0 70% 55%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 150 30% 8%;
+    --foreground: 140 20% 95%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 150 25% 12%;
+    --card-foreground: 140 20% 95%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 150 25% 12%;
+    --popover-foreground: 140 20% 95%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 145 50% 50%;
+    --primary-foreground: 150 30% 8%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 150 20% 18%;
+    --secondary-foreground: 140 20% 95%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 150 15% 20%;
+    --muted-foreground: 140 15% 65%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 145 50% 42%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --border: 150 20% 22%;
+    --input: 150 20% 22%;
+    --ring: 145 50% 50%;
+
+    --sidebar-background: 150 30% 6%;
+    --sidebar-foreground: 140 20% 92%;
+    --sidebar-primary: 145 50% 45%;
+    --sidebar-primary-foreground: 150 30% 8%;
+    --sidebar-accent: 150 20% 15%;
+    --sidebar-accent-foreground: 140 20% 95%;
+    --sidebar-border: 150 15% 18%;
+    --sidebar-ring: 145 50% 45%;
   }
 }
 
@@ -100,6 +119,153 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer components {
+  .zulim-header {
+    @apply bg-gradient-to-r from-[hsl(var(--forest-dark))] to-[hsl(var(--forest-mid))] text-white;
+  }
+
+  .zulim-sidebar {
+    @apply bg-card border-r border-border shadow-lg;
+  }
+
+  .zulim-section {
+    @apply p-4 border-b border-border;
+  }
+
+  .zulim-section-title {
+    @apply text-sm font-semibold text-foreground mb-3 flex items-center gap-2;
+  }
+
+  .upload-zone {
+    @apply border-2 border-dashed border-[hsl(var(--forest-light))] rounded-lg p-6 text-center cursor-pointer 
+           bg-[hsl(var(--sage-light))] hover:bg-[hsl(var(--sage))] hover:border-[hsl(var(--forest-mid))] 
+           transition-all duration-200;
+  }
+
+  .upload-zone.dragging {
+    @apply bg-[hsl(var(--sage))] border-[hsl(var(--forest-mid))] scale-[1.02];
+  }
+
+  .layer-toggle {
+    @apply flex items-center gap-2 p-2 rounded-md hover:bg-muted cursor-pointer transition-colors text-sm;
+  }
+
+  .layer-toggle.active {
+    @apply bg-[hsl(var(--sage-light))] border border-[hsl(var(--forest-light))];
+  }
+
+  .metrics-card {
+    @apply bg-card rounded-lg border border-border p-3 shadow-sm;
+  }
+
+  .metric-value {
+    @apply text-xl font-bold text-[hsl(var(--forest-dark))];
+  }
+
+  .metric-label {
+    @apply text-xs text-muted-foreground uppercase tracking-wide;
+  }
+
+  .analysis-badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+
+  .analysis-badge.single-variable {
+    @apply bg-[hsl(var(--info-teal)/0.15)] text-[hsl(var(--info-teal))];
+  }
+
+  .analysis-badge.predictor-based {
+    @apply bg-[hsl(var(--layer-uncertainty)/0.15)] text-[hsl(var(--layer-uncertainty))];
+  }
+
+  .export-option {
+    @apply flex items-center justify-between p-3 rounded-lg border border-border 
+           hover:border-[hsl(var(--forest-light))] hover:bg-[hsl(var(--sage-light))] 
+           cursor-pointer transition-all;
+  }
+
+  .export-option.disabled {
+    @apply opacity-50 cursor-not-allowed hover:border-border hover:bg-transparent;
+  }
+
+  .reliability-indicator {
+    @apply inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded;
+  }
+
+  .reliability-indicator.high {
+    @apply bg-[hsl(var(--success-green)/0.15)] text-[hsl(var(--success-green))];
+  }
+
+  .reliability-indicator.medium {
+    @apply bg-[hsl(var(--warning-amber)/0.15)] text-[hsl(var(--warning-amber))];
+  }
+
+  .reliability-indicator.low {
+    @apply bg-[hsl(var(--destructive)/0.15)] text-destructive;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 3px;
+  }
+}
+
+/* Leaflet map overrides */
+.leaflet-container {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  z-index: 1;
+}
+
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+}
+
+.leaflet-control-zoom a {
+  background: white !important;
+  color: hsl(152, 44%, 18%) !important;
+  border: none !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background: hsl(140, 30%, 95%) !important;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.leaflet-popup-content {
+  margin: 12px 16px;
+  font-size: 13px;
+  line-height: 1.5;
 }
