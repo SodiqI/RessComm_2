@@ -232,6 +232,9 @@ export default function Zulim() {
           
           <ExportPanel 
             results={results}
+            config={config}
+            colorScheme={colorScheme}
+            layerVisibility={layerVisibility}
             mapRef={mapRef}
           />
         </aside>

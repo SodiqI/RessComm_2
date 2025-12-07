@@ -2,20 +2,25 @@ import { useState } from 'react';
 import { Download, FileImage, FileText, Table2, Map, Shield, AlertTriangle, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import type { AnalysisResults, ExportOption } from '@/types/spatial';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import type { AnalysisResults, AnalysisConfig, ExportOption, ColorScheme, LayerVisibility } from '@/types/spatial';
+import { generateComprehensivePDF, generatePdfFilename } from '@/utils/pdfExportUtils';
 
 interface ExportPanelProps {
   results: AnalysisResults | null;
+  config: AnalysisConfig;
+  colorScheme: ColorScheme;
+  layerVisibility: LayerVisibility;
   mapRef: React.RefObject<HTMLDivElement>;
 }
 
-export function ExportPanel({ results, mapRef }: ExportPanelProps) {
+export function ExportPanel({ results, config, colorScheme, layerVisibility, mapRef }: ExportPanelProps) {
   const { toast } = useToast();
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportMessage, setExportMessage] = useState('');
 
   if (!results) {
     return (
@@ -32,6 +37,17 @@ export function ExportPanel({ results, mapRef }: ExportPanelProps) {
   }
 
   const isSingleVariable = results.analysisType === 'single-variable';
+  
+  // Determine which layer is currently active for smart export
+  const getActiveLayer = (): string => {
+    if (layerVisibility.continuous) return 'continuous';
+    if (layerVisibility.classified) return 'classified';
+    if (layerVisibility.accuracy) return 'accuracy';
+    if (layerVisibility.residuals) return 'residuals';
+    if (layerVisibility.uncertainty) return 'uncertainty';
+    if (layerVisibility.rpe) return 'rpe';
+    return 'continuous';
+  };
 
   // Define export options based on analysis type
   const singleVariableExports: ExportOption[] = [
@@ -39,7 +55,7 @@ export function ExportPanel({ results, mapRef }: ExportPanelProps) {
     { id: 'classified', label: 'Classified Map', description: 'Class boundaries (GeoTIFF/SHP)', format: 'geotiff', available: !!results.classified },
     { id: 'accuracy', label: 'Accuracy Surface', description: 'CV error map (GeoTIFF)', format: 'geotiff', available: !!results.accuracy },
     { id: 'rpe', label: 'RPE Layer', description: 'Reliable extent (GeoTIFF/SHP)', format: 'shapefile', available: !!results.rpe },
-    { id: 'pdf', label: 'Full PDF Report', description: 'Maps + metrics + summary', format: 'pdf', available: true },
+    { id: 'pdf', label: 'Full PDF Report', description: 'Maps + legend + metrics + interpretation', format: 'pdf', available: true },
   ];
 
   const predictorExports: ExportOption[] = [
@@ -48,18 +64,35 @@ export function ExportPanel({ results, mapRef }: ExportPanelProps) {
     { id: 'uncertainty', label: 'Uncertainty Map', description: 'Confidence (GeoTIFF)', format: 'geotiff', available: !!results.uncertainty },
     { id: 'rpe', label: 'RPE Layer', description: 'Reliable extent (GeoTIFF/SHP)', format: 'shapefile', available: !!results.rpe },
     { id: 'importance', label: 'Feature Importance', description: 'Variable rankings (CSV)', format: 'csv', available: !!results.featureImportance },
-    { id: 'pdf', label: 'Full PDF Report', description: 'Maps + model summary', format: 'pdf', available: true },
+    { id: 'pdf', label: 'Full PDF Report', description: 'Maps + legend + model summary', format: 'pdf', available: true },
   ];
 
   const exportOptions = isSingleVariable ? singleVariableExports : predictorExports;
 
   const handleExport = async (option: ExportOption) => {
+    // Check if there's an active layer for PDF export
+    if (option.format === 'pdf') {
+      const hasActiveLayer = Object.values(layerVisibility).some(v => v);
+      if (!hasActiveLayer || (!layerVisibility.continuous && !layerVisibility.classified && 
+          !layerVisibility.accuracy && !layerVisibility.residuals && 
+          !layerVisibility.uncertainty && !layerVisibility.rpe)) {
+        toast({
+          title: "No active layer",
+          description: "Please enable at least one map layer before exporting PDF",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
     setIsExporting(option.id);
+    setExportProgress(0);
+    setExportMessage('Starting export...');
     
     try {
       switch (option.format) {
         case 'pdf':
-          await exportPDF();
+          await handlePdfExport();
           break;
         case 'csv':
           exportCSV(option.id);
@@ -84,150 +117,92 @@ export function ExportPanel({ results, mapRef }: ExportPanelProps) {
       });
     } finally {
       setIsExporting(null);
+      setExportProgress(0);
+      setExportMessage('');
     }
   };
 
-  const exportPDF = async () => {
-    const pdf = new jsPDF('landscape', 'mm', 'a4');
+  const handlePdfExport = async () => {
+    const activeLayer = getActiveLayer();
     
-    // Title
-    pdf.setFontSize(20);
-    pdf.setTextColor(27, 67, 50);
-    pdf.text('ZULIM Analysis Report', 20, 20);
-    
-    // Subtitle
-    pdf.setFontSize(12);
-    pdf.setTextColor(100);
-    pdf.text(`${results.analysisType === 'predictor-based' ? 'Model-based Prediction' : 'Pure Interpolation'} Analysis`, 20, 28);
-    pdf.text(`Generated: ${new Date().toLocaleString()}`, 20, 34);
-    
-    // Analysis Info
-    pdf.setFontSize(14);
-    pdf.setTextColor(27, 67, 50);
-    pdf.text('Analysis Summary', 20, 48);
-    
-    pdf.setFontSize(10);
-    pdf.setTextColor(60);
-    const summaryY = 55;
-    pdf.text(`Target Variable: ${results.targetVar}`, 25, summaryY);
-    pdf.text(`Analysis Type: ${results.analysisType}`, 25, summaryY + 6);
-    if (results.predictors.length > 0) {
-      pdf.text(`Predictors: ${results.predictors.join(', ')}`, 25, summaryY + 12);
-    }
-    
-    // Metrics
-    pdf.setFontSize(14);
-    pdf.setTextColor(27, 67, 50);
-    pdf.text('Validation Metrics', 20, summaryY + 28);
-    
-    pdf.setFontSize(10);
-    pdf.setTextColor(60);
-    const metricsY = summaryY + 35;
-    pdf.text(`RMSE: ${results.metrics.rmse}`, 25, metricsY);
-    pdf.text(`MAE: ${results.metrics.mae}`, 25, metricsY + 6);
-    pdf.text(`R²: ${results.metrics.r2}`, 25, metricsY + 12);
-    pdf.text(`Bias: ${results.metrics.bias}`, 25, metricsY + 18);
-    pdf.text(`Sample Size: ${results.metrics.sampleSize}`, 25, metricsY + 24);
-    pdf.text(`Cross-validation: ${results.metrics.cvFolds}-fold`, 25, metricsY + 30);
-    
-    // Feature importance (if available)
-    if (results.featureImportance && results.featureImportance.length > 0) {
-      pdf.setFontSize(14);
-      pdf.setTextColor(27, 67, 50);
-      pdf.text('Feature Importance', 20, metricsY + 46);
-      
-      pdf.setFontSize(10);
-      pdf.setTextColor(60);
-      let fiY = metricsY + 53;
-      results.featureImportance.forEach((f, idx) => {
-        pdf.text(`${idx + 1}. ${f.feature}: ${(f.importance * 100).toFixed(1)}%`, 25, fiY);
-        fiY += 6;
-      });
-    }
-    
-    // Capture map screenshot if available
-    if (mapRef.current) {
-      try {
-        const canvas = await html2canvas(mapRef.current, {
-          useCORS: true,
-          allowTaint: true,
-          scale: 2
-        });
-        const imgData = canvas.toDataURL('image/png');
-        pdf.addPage();
-        pdf.setFontSize(14);
-        pdf.setTextColor(27, 67, 50);
-        pdf.text('Map Output', 20, 20);
-        pdf.addImage(imgData, 'PNG', 20, 30, 250, 150);
-      } catch (e) {
-        console.warn('Could not capture map screenshot', e);
+    await generateComprehensivePDF(
+      results,
+      config,
+      colorScheme,
+      activeLayer,
+      mapRef,
+      'Uploaded Dataset',
+      (progress, message) => {
+        setExportProgress(progress);
+        setExportMessage(message);
       }
-    }
-    
-    // Reliability Warning
-    pdf.addPage();
-    pdf.setFontSize(14);
-    pdf.setTextColor(27, 67, 50);
-    pdf.text('Reliability Notes', 20, 20);
-    
-    pdf.setFontSize(10);
-    pdf.setTextColor(60);
-    const warnText = [
-      '• Predictions outside the Reliable Prediction Extent (RPE) may be unreliable.',
-      '• The RPE was calculated using: ' + results.analysisType,
-      '• Areas with high uncertainty or far from training points should be interpreted with caution.',
-      '• Cross-validation metrics provide an estimate of prediction accuracy within the RPE.',
-    ];
-    warnText.forEach((line, idx) => {
-      pdf.text(line, 25, 30 + idx * 8);
-    });
-    
-    pdf.save(`zulim_report_${Date.now()}.pdf`);
+    );
   };
 
   const exportCSV = (type: string) => {
     let csvContent = '';
+    const timestamp = Date.now();
+    let filename = '';
     
     if (type === 'importance' && results.featureImportance) {
-      csvContent = 'Feature,Importance\n';
-      results.featureImportance.forEach(f => {
-        csvContent += `${f.feature},${f.importance}\n`;
+      csvContent = 'Rank,Feature,Importance,Percentage\n';
+      results.featureImportance.forEach((f, idx) => {
+        csvContent += `${idx + 1},${f.feature},${f.importance},${(f.importance * 100).toFixed(2)}%\n`;
       });
+      
+      // Add metadata header
+      const header = [
+        '# ZULIM Feature Importance Export',
+        `# Analysis Type: ${results.analysisType}`,
+        `# Model: ${config.algorithm}`,
+        `# Target Variable: ${results.targetVar}`,
+        `# Generated: ${new Date().toISOString()}`,
+        '#',
+        ''
+      ].join('\n');
+      csvContent = header + csvContent;
+      
+      filename = `${config.algorithm.toUpperCase()}_FeatureImportance_${new Date().toISOString().split('T')[0]}.csv`;
     }
     
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `zulim_${type}_${Date.now()}.csv`;
+    a.download = filename || `zulim_${type}_${timestamp}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const exportGeoData = (type: string) => {
-    // In a production app, this would generate actual GeoTIFF/Shapefile
-    // For now, export as GeoJSON
     let data: any = null;
+    let layerName = type;
     
     switch (type) {
       case 'interpolated':
       case 'predicted':
         data = results.continuous.grid;
+        layerName = isSingleVariable ? 'InterpolatedSurface' : 'PredictedSurface';
         break;
       case 'classified':
         data = results.classified;
+        layerName = 'ClassifiedSurface';
         break;
       case 'accuracy':
         data = results.accuracy;
+        layerName = 'AccuracySurface';
         break;
       case 'residuals':
         data = results.residuals;
+        layerName = 'ResidualMap';
         break;
       case 'uncertainty':
         data = results.uncertainty;
+        layerName = 'UncertaintyMap';
         break;
       case 'rpe':
         data = results.rpePolygon;
+        layerName = 'RPELayer';
         break;
     }
     
@@ -235,24 +210,50 @@ export function ExportPanel({ results, mapRef }: ExportPanelProps) {
       throw new Error('No data available for this export');
     }
     
-    // Convert to GeoJSON
+    // Convert to GeoJSON with full metadata
     const geojson = {
       type: 'FeatureCollection',
-      features: Array.isArray(data) ? data.map((cell: any) => ({
+      name: layerName,
+      crs: {
+        type: 'name',
+        properties: { name: 'urn:ogc:def:crs:EPSG::4326' }
+      },
+      metadata: {
+        analysisType: results.analysisType,
+        algorithm: config.algorithm,
+        targetVariable: results.targetVar,
+        predictors: results.predictors,
+        generatedAt: new Date().toISOString(),
+        metrics: results.metrics,
+        rpeMethod: config.rpeMethod,
+        gridResolution: config.gridResolution
+      },
+      features: Array.isArray(data) ? data.map((cell: any, idx: number) => ({
         type: 'Feature',
+        id: idx,
         geometry: {
           type: 'Point',
           coordinates: [cell.lng, cell.lat]
         },
-        properties: cell
+        properties: {
+          value: cell.value,
+          class: cell.class,
+          accuracy: cell.accuracy,
+          residual: cell.residual,
+          uncertainty: cell.uncertainty,
+          reliable: cell.reliable
+        }
       })) : data
     };
+    
+    const dateStr = new Date().toISOString().split('T')[0];
+    const filename = `${config.algorithm.toUpperCase()}_${layerName}_${dateStr}.geojson`;
     
     const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `zulim_${type}_${Date.now()}.geojson`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
     
@@ -296,7 +297,21 @@ export function ExportPanel({ results, mapRef }: ExportPanelProps) {
                 ? 'Single-variable interpolation exports' 
                 : 'Predictor-based interpolation exports'}
             </p>
+            <p className="text-xs text-forest-light mt-1">
+              Active layer: {getActiveLayer().charAt(0).toUpperCase() + getActiveLayer().slice(1)}
+            </p>
           </div>
+
+          {/* Export Progress */}
+          {isExporting === 'pdf' && exportProgress > 0 && (
+            <div className="mb-3 p-3 bg-forest-light/10 rounded-md">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-forest-dark">{exportMessage}</span>
+                <span className="text-xs text-muted-foreground">{exportProgress}%</span>
+              </div>
+              <Progress value={exportProgress} className="h-2" />
+            </div>
+          )}
 
           {/* Export Options */}
           <div className="space-y-2">
@@ -334,13 +349,27 @@ export function ExportPanel({ results, mapRef }: ExportPanelProps) {
             })}
           </div>
 
+          {/* PDF Export Info */}
+          <div className="mt-4 p-3 bg-forest-light/5 border border-forest-light/20 rounded-lg">
+            <p className="text-xs font-medium text-forest-dark mb-2">PDF Report includes:</p>
+            <ul className="space-y-1 text-xs text-muted-foreground">
+              <li>✓ Color legend matching map view</li>
+              <li>✓ Analysis method declaration</li>
+              <li>✓ Output type & metadata summary</li>
+              <li>✓ Performance metrics (RMSE, R², etc.)</li>
+              <li>✓ Interpretation notes & disclaimers</li>
+              <li>✓ Reliability summary & warnings</li>
+              {!isSingleVariable && <li>✓ Feature importance table</li>}
+            </ul>
+          </div>
+
           {/* Reliability Note */}
-          <div className="mt-4 p-3 bg-sage-light rounded-lg text-xs text-muted-foreground">
+          <div className="mt-3 p-3 bg-sage-light rounded-lg text-xs text-muted-foreground">
             <p className="font-medium text-foreground mb-1">Export Notes:</p>
             <ul className="space-y-1 list-disc list-inside">
               <li>Reliable areas are marked in the RPE layer</li>
               <li>Low-confidence regions are flagged in exports</li>
-              <li>PDF includes full reliability warnings</li>
+              <li>PDF filename includes analysis details</li>
             </ul>
           </div>
         </CollapsibleContent>
