@@ -235,6 +235,7 @@ export default function Zulim() {
             config={config}
             colorScheme={colorScheme}
             layerVisibility={layerVisibility}
+            setLayerVisibility={setLayerVisibility}
             mapRef={mapRef}
           />
         </aside>

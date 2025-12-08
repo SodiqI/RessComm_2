@@ -1,21 +1,22 @@
 import { useState } from 'react';
-import { Download, FileImage, FileText, Table2, Map, Shield, AlertTriangle, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { Download, FileImage, FileText, Table2, Map, Shield, AlertTriangle, ChevronDown, ChevronUp, Loader2, FileStack } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import type { AnalysisResults, AnalysisConfig, ExportOption, ColorScheme, LayerVisibility } from '@/types/spatial';
-import { generateComprehensivePDF, generatePdfFilename } from '@/utils/pdfExportUtils';
+import { generateComprehensivePDF, generateMultiPagePDF, generatePdfFilename } from '@/utils/pdfExportUtils';
 
 interface ExportPanelProps {
   results: AnalysisResults | null;
   config: AnalysisConfig;
   colorScheme: ColorScheme;
   layerVisibility: LayerVisibility;
+  setLayerVisibility: (visibility: LayerVisibility) => void;
   mapRef: React.RefObject<HTMLDivElement>;
 }
 
-export function ExportPanel({ results, config, colorScheme, layerVisibility, mapRef }: ExportPanelProps) {
+export function ExportPanel({ results, config, colorScheme, layerVisibility, setLayerVisibility, mapRef }: ExportPanelProps) {
   const { toast } = useToast();
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -51,31 +52,33 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, map
 
   // Define export options based on analysis type
   const singleVariableExports: ExportOption[] = [
-    { id: 'interpolated', label: 'Interpolated Raster', description: 'Continuous surface (GeoTIFF)', format: 'geotiff', available: true },
-    { id: 'classified', label: 'Classified Map', description: 'Class boundaries (GeoTIFF/SHP)', format: 'geotiff', available: !!results.classified },
-    { id: 'accuracy', label: 'Accuracy Surface', description: 'CV error map (GeoTIFF)', format: 'geotiff', available: !!results.accuracy },
-    { id: 'rpe', label: 'RPE Layer', description: 'Reliable extent (GeoTIFF/SHP)', format: 'shapefile', available: !!results.rpe },
-    { id: 'pdf', label: 'Full PDF Report', description: 'Maps + legend + metrics + interpretation', format: 'pdf', available: true },
+    { id: 'full-pdf', label: 'Full Multi-Page PDF', description: '4 pages: Surface, Classified, Accuracy, RPE', format: 'pdf', available: true },
+    { id: 'interpolated', label: 'Interpolated Raster', description: 'Continuous surface (GeoJSON)', format: 'geotiff', available: true },
+    { id: 'classified', label: 'Classified Map', description: 'Class boundaries (GeoJSON)', format: 'geotiff', available: !!results.classified },
+    { id: 'accuracy', label: 'Accuracy Surface', description: 'CV error map (GeoJSON)', format: 'geotiff', available: !!results.accuracy },
+    { id: 'rpe', label: 'RPE Layer', description: 'Reliable extent (GeoJSON)', format: 'shapefile', available: !!results.rpe },
+    { id: 'single-pdf', label: 'Current Layer PDF', description: 'Single page with active layer', format: 'pdf', available: true },
   ];
 
   const predictorExports: ExportOption[] = [
-    { id: 'predicted', label: 'Predicted Surface', description: 'Model output (GeoTIFF)', format: 'geotiff', available: true },
-    { id: 'residuals', label: 'Residual Map', description: 'Errors (GeoTIFF/SHP)', format: 'geotiff', available: !!results.residuals },
-    { id: 'uncertainty', label: 'Uncertainty Map', description: 'Confidence (GeoTIFF)', format: 'geotiff', available: !!results.uncertainty },
-    { id: 'rpe', label: 'RPE Layer', description: 'Reliable extent (GeoTIFF/SHP)', format: 'shapefile', available: !!results.rpe },
+    { id: 'full-pdf', label: 'Full Multi-Page PDF', description: '5 pages: Surface, Residuals, Uncertainty, RPE, Features', format: 'pdf', available: true },
+    { id: 'predicted', label: 'Predicted Surface', description: 'Model output (GeoJSON)', format: 'geotiff', available: true },
+    { id: 'residuals', label: 'Residual Map', description: 'Errors (GeoJSON)', format: 'geotiff', available: !!results.residuals },
+    { id: 'uncertainty', label: 'Uncertainty Map', description: 'Confidence (GeoJSON)', format: 'geotiff', available: !!results.uncertainty },
+    { id: 'rpe', label: 'RPE Layer', description: 'Reliable extent (GeoJSON)', format: 'shapefile', available: !!results.rpe },
     { id: 'importance', label: 'Feature Importance', description: 'Variable rankings (CSV)', format: 'csv', available: !!results.featureImportance },
-    { id: 'pdf', label: 'Full PDF Report', description: 'Maps + legend + model summary', format: 'pdf', available: true },
+    { id: 'single-pdf', label: 'Current Layer PDF', description: 'Single page with active layer', format: 'pdf', available: true },
   ];
 
   const exportOptions = isSingleVariable ? singleVariableExports : predictorExports;
 
   const handleExport = async (option: ExportOption) => {
-    // Check if there's an active layer for PDF export
-    if (option.format === 'pdf') {
-      const hasActiveLayer = Object.values(layerVisibility).some(v => v);
-      if (!hasActiveLayer || (!layerVisibility.continuous && !layerVisibility.classified && 
-          !layerVisibility.accuracy && !layerVisibility.residuals && 
-          !layerVisibility.uncertainty && !layerVisibility.rpe)) {
+    // Check if there's an active layer for single PDF export
+    if (option.id === 'single-pdf') {
+      const hasActiveLayer = layerVisibility.continuous || layerVisibility.classified || 
+          layerVisibility.accuracy || layerVisibility.residuals || 
+          layerVisibility.uncertainty || layerVisibility.rpe;
+      if (!hasActiveLayer) {
         toast({
           title: "No active layer",
           description: "Please enable at least one map layer before exporting PDF",
@@ -90,19 +93,14 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, map
     setExportMessage('Starting export...');
     
     try {
-      switch (option.format) {
-        case 'pdf':
-          await handlePdfExport();
-          break;
-        case 'csv':
-          exportCSV(option.id);
-          break;
-        case 'geotiff':
-        case 'shapefile':
-          exportGeoData(option.id);
-          break;
-        default:
-          throw new Error('Unknown export format');
+      if (option.id === 'full-pdf') {
+        await handleFullPdfExport();
+      } else if (option.id === 'single-pdf') {
+        await handleSinglePdfExport();
+      } else if (option.format === 'csv') {
+        exportCSV(option.id);
+      } else {
+        exportGeoData(option.id);
       }
       
       toast({
@@ -122,7 +120,23 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, map
     }
   };
 
-  const handlePdfExport = async () => {
+  const handleFullPdfExport = async () => {
+    await generateMultiPagePDF(
+      results,
+      config,
+      colorScheme,
+      mapRef,
+      layerVisibility,
+      setLayerVisibility,
+      'Uploaded Dataset',
+      (progress, message) => {
+        setExportProgress(progress);
+        setExportMessage(message);
+      }
+    );
+  };
+
+  const handleSinglePdfExport = async () => {
     const activeLayer = getActiveLayer();
     
     await generateComprehensivePDF(
@@ -141,7 +155,6 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, map
 
   const exportCSV = (type: string) => {
     let csvContent = '';
-    const timestamp = Date.now();
     let filename = '';
     
     if (type === 'importance' && results.featureImportance) {
@@ -150,7 +163,6 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, map
         csvContent += `${idx + 1},${f.feature},${f.importance},${(f.importance * 100).toFixed(2)}%\n`;
       });
       
-      // Add metadata header
       const header = [
         '# ZULIM Feature Importance Export',
         `# Analysis Type: ${results.analysisType}`,
@@ -169,7 +181,7 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, map
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename || `zulim_${type}_${timestamp}.csv`;
+    a.download = filename || `zulim_${type}_${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -210,7 +222,6 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, map
       throw new Error('No data available for this export');
     }
     
-    // Convert to GeoJSON with full metadata
     const geojson = {
       type: 'FeatureCollection',
       name: layerName,
@@ -256,15 +267,11 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, map
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
-    
-    toast({
-      title: "Note",
-      description: "Exported as GeoJSON. GeoTIFF export requires backend processing.",
-    });
   };
 
-  const getIcon = (format: string) => {
-    switch (format) {
+  const getIcon = (option: ExportOption) => {
+    if (option.id === 'full-pdf') return FileStack;
+    switch (option.format) {
       case 'geotiff':
         return Map;
       case 'shapefile':
@@ -277,6 +284,10 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, map
         return FileImage;
     }
   };
+
+  const layerPages = isSingleVariable 
+    ? ['Interpolated Surface', 'Classified Map', 'Accuracy Surface', 'RPE Layer']
+    : ['Predicted Surface', 'Residual Map', 'Uncertainty Map', 'RPE Layer', 'Feature Importance'];
 
   return (
     <div className="zulim-section">
@@ -303,7 +314,7 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, map
           </div>
 
           {/* Export Progress */}
-          {isExporting === 'pdf' && exportProgress > 0 && (
+          {(isExporting === 'full-pdf' || isExporting === 'single-pdf') && exportProgress > 0 && (
             <div className="mb-3 p-3 bg-forest-light/10 rounded-md">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-forest-dark">{exportMessage}</span>
@@ -316,23 +327,24 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, map
           {/* Export Options */}
           <div className="space-y-2">
             {exportOptions.map(option => {
-              const Icon = getIcon(option.format);
+              const Icon = getIcon(option);
               const isLoading = isExporting === option.id;
+              const isFullPdf = option.id === 'full-pdf';
               
               return (
                 <div
                   key={option.id}
-                  className={`export-option ${!option.available ? 'disabled' : ''}`}
+                  className={`export-option ${!option.available ? 'disabled' : ''} ${isFullPdf ? 'border-2 border-forest-light/50 bg-forest-light/5' : ''}`}
                   onClick={() => option.available && !isLoading && handleExport(option)}
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-md flex items-center justify-center ${
-                      option.available ? 'bg-forest-light/10' : 'bg-muted'
+                      isFullPdf ? 'bg-forest-light/20' : option.available ? 'bg-forest-light/10' : 'bg-muted'
                     }`}>
-                      <Icon className={`w-4 h-4 ${option.available ? 'text-forest-light' : 'text-muted-foreground'}`} />
+                      <Icon className={`w-4 h-4 ${isFullPdf ? 'text-forest-dark' : option.available ? 'text-forest-light' : 'text-muted-foreground'}`} />
                     </div>
                     <div>
-                      <p className="text-sm font-medium">{option.label}</p>
+                      <p className={`text-sm font-medium ${isFullPdf ? 'text-forest-dark' : ''}`}>{option.label}</p>
                       <p className="text-xs text-muted-foreground">{option.description}</p>
                     </div>
                   </div>
@@ -349,27 +361,34 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, map
             })}
           </div>
 
-          {/* PDF Export Info */}
+          {/* Multi-Page PDF Info */}
           <div className="mt-4 p-3 bg-forest-light/5 border border-forest-light/20 rounded-lg">
-            <p className="text-xs font-medium text-forest-dark mb-2">PDF Report includes:</p>
+            <p className="text-xs font-medium text-forest-dark mb-2">Full PDF Report includes:</p>
             <ul className="space-y-1 text-xs text-muted-foreground">
-              <li>✓ Color legend matching map view</li>
-              <li>✓ Analysis method declaration</li>
-              <li>✓ Output type & metadata summary</li>
-              <li>✓ Performance metrics (RMSE, R², etc.)</li>
-              <li>✓ Interpretation notes & disclaimers</li>
-              <li>✓ Reliability summary & warnings</li>
-              {!isSingleVariable && <li>✓ Feature importance table</li>}
+              {layerPages.map((page, idx) => (
+                <li key={idx}>✓ Page {idx + 1}: {page}</li>
+              ))}
             </ul>
+            <div className="mt-2 pt-2 border-t border-forest-light/10">
+              <p className="text-xs text-muted-foreground">Each page contains:</p>
+              <ul className="space-y-0.5 text-xs text-muted-foreground mt-1">
+                <li>• Map with correct aspect ratio</li>
+                <li>• Scale bar (km + miles)</li>
+                <li>• North arrow & coordinates</li>
+                <li>• Color legend with labels</li>
+                <li>• CRS info (EPSG:4326)</li>
+                <li>• Method & output type</li>
+              </ul>
+            </div>
           </div>
 
           {/* Reliability Note */}
           <div className="mt-3 p-3 bg-sage-light rounded-lg text-xs text-muted-foreground">
             <p className="font-medium text-foreground mb-1">Export Notes:</p>
             <ul className="space-y-1 list-disc list-inside">
-              <li>Reliable areas are marked in the RPE layer</li>
-              <li>Low-confidence regions are flagged in exports</li>
-              <li>PDF filename includes analysis details</li>
+              <li>RPE marks reliable vs unreliable regions</li>
+              <li>PDF filename includes method & timestamp</li>
+              <li>GeoJSON includes full metadata & CRS</li>
             </ul>
           </div>
         </CollapsibleContent>
