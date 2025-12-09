@@ -262,22 +262,156 @@ export const SpatialMap = forwardRef<HTMLDivElement, SpatialMapProps>(
       // This would require recreating layers, which is handled in the results effect
     }, [opacity]);
 
+    // Helper to get active layer for legend
+    const getActiveLayerType = () => {
+      if (visibility.continuous) return 'continuous';
+      if (visibility.classified) return 'classified';
+      if (visibility.accuracy) return 'accuracy';
+      if (visibility.residuals) return 'residuals';
+      if (visibility.uncertainty) return 'uncertainty';
+      if (visibility.rpe) return 'rpe';
+      return null;
+    };
+
+    const activeLayer = getActiveLayerType();
+    const numClasses = results?.classified ? Math.max(...results.classified.map(c => (c.class || 0) + 1)) : 5;
+
     return (
       <div className="relative w-full h-full">
         <div ref={mapContainerRef} className="w-full h-full" />
         
-        {/* Legend */}
+        {/* Continuous Surface Legend */}
         {results && visibility.continuous && (
           <div className="absolute bottom-6 left-4 z-[1000] bg-card p-3 rounded-lg shadow-lg border border-border min-w-[180px]">
-            <h4 className="text-xs font-semibold mb-2 text-foreground">{results.targetVar}</h4>
+            <h4 className="text-xs font-semibold mb-2 text-foreground">
+              {results.analysisType === 'predictor-based' ? 'Predicted Surface' : 'Interpolated Surface'}
+            </h4>
+            <p className="text-[10px] text-muted-foreground mb-1">{results.targetVar}</p>
             <div 
               className="h-4 rounded-sm mb-1"
               style={{ background: getGradientCSS(colorScheme) }}
             />
             <div className="flex justify-between text-[10px] text-muted-foreground">
-              <span>{results.continuous.minVal.toFixed(1)}</span>
-              <span>{results.continuous.maxVal.toFixed(1)}</span>
+              <span>{results.continuous.minVal.toFixed(2)}</span>
+              <span>{results.continuous.maxVal.toFixed(2)}</span>
             </div>
+            <div className="flex justify-between text-[9px] text-muted-foreground/70 mt-0.5">
+              <span>Low</span>
+              <span>High</span>
+            </div>
+          </div>
+        )}
+
+        {/* Classified Map Legend */}
+        {results && visibility.classified && results.classified && (
+          <div className="absolute bottom-6 left-4 z-[1000] bg-card p-3 rounded-lg shadow-lg border border-border min-w-[180px]">
+            <h4 className="text-xs font-semibold mb-2 text-foreground">Classified Map</h4>
+            <p className="text-[10px] text-muted-foreground mb-2">{results.targetVar}</p>
+            <div className="space-y-1">
+              {Array.from({ length: numClasses }).map((_, i) => {
+                const classRange = (results.continuous.maxVal - results.continuous.minVal) / numClasses;
+                const low = results.continuous.minVal + i * classRange;
+                const high = results.continuous.minVal + (i + 1) * classRange;
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <div 
+                      className="w-4 h-3 rounded-sm border border-border/50"
+                      style={{ backgroundColor: getColorForClass(i, numClasses) }}
+                    />
+                    <span className="text-[10px] text-muted-foreground">
+                      Class {i + 1}: {low.toFixed(2)} - {high.toFixed(2)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Accuracy Surface Legend (Single-variable) */}
+        {results && visibility.accuracy && results.accuracy && (
+          <div className="absolute bottom-6 left-4 z-[1000] bg-card p-3 rounded-lg shadow-lg border border-border min-w-[180px]">
+            <h4 className="text-xs font-semibold mb-2 text-foreground">Cross-Validation Accuracy</h4>
+            <p className="text-[10px] text-muted-foreground mb-1">Prediction Reliability</p>
+            <div 
+              className="h-4 rounded-sm mb-1"
+              style={{ background: getGradientCSS('greens') }}
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>High Error</span>
+              <span>Low Error</span>
+            </div>
+            <div className="flex justify-between text-[9px] text-muted-foreground/70 mt-0.5">
+              <span>Less Reliable</span>
+              <span>More Reliable</span>
+            </div>
+          </div>
+        )}
+
+        {/* Residuals Legend (Predictor-based) */}
+        {results && visibility.residuals && results.residuals && (
+          <div className="absolute bottom-6 left-4 z-[1000] bg-card p-3 rounded-lg shadow-lg border border-border min-w-[180px]">
+            <h4 className="text-xs font-semibold mb-2 text-foreground">Residual Map</h4>
+            <p className="text-[10px] text-muted-foreground mb-1">Observed − Predicted</p>
+            <div 
+              className="h-4 rounded-sm mb-1"
+              style={{ background: getGradientCSS('coolwarm') }}
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>Over-predict</span>
+              <span>Under-predict</span>
+            </div>
+            <div className="flex justify-between text-[9px] text-muted-foreground/70 mt-0.5">
+              <span>Negative</span>
+              <span>Positive</span>
+            </div>
+          </div>
+        )}
+
+        {/* Uncertainty Legend (Predictor-based) */}
+        {results && visibility.uncertainty && results.uncertainty && (
+          <div className="absolute bottom-6 left-4 z-[1000] bg-card p-3 rounded-lg shadow-lg border border-border min-w-[180px]">
+            <h4 className="text-xs font-semibold mb-2 text-foreground">Prediction Uncertainty</h4>
+            <p className="text-[10px] text-muted-foreground mb-1">Model Confidence</p>
+            <div 
+              className="h-4 rounded-sm mb-1"
+              style={{ background: getGradientCSS('plasma') }}
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>Low</span>
+              <span>High</span>
+            </div>
+            <div className="flex justify-between text-[9px] text-muted-foreground/70 mt-0.5">
+              <span>High Confidence</span>
+              <span>Low Confidence</span>
+            </div>
+          </div>
+        )}
+
+        {/* RPE Legend */}
+        {results && visibility.rpe && results.rpePolygon && (
+          <div className="absolute bottom-6 left-4 z-[1000] bg-card p-3 rounded-lg shadow-lg border border-border min-w-[180px]">
+            <h4 className="text-xs font-semibold mb-2 text-foreground">Reliable Prediction Extent</h4>
+            <p className="text-[10px] text-muted-foreground mb-2">Prediction Reliability Zones</p>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <div 
+                  className="w-4 h-3 rounded-sm border-2"
+                  style={{ backgroundColor: 'rgba(76, 175, 80, 0.3)', borderColor: '#4caf50' }}
+                />
+                <span className="text-[10px] text-muted-foreground">High Reliability (within RPE)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div 
+                  className="w-4 h-3 rounded-sm border-2"
+                  style={{ backgroundColor: 'rgba(244, 67, 54, 0.2)', borderColor: '#f44336', borderStyle: 'dashed' }}
+                />
+                <span className="text-[10px] text-muted-foreground">Low Reliability (outside RPE)</span>
+              </div>
+            </div>
+            <p className="text-[9px] text-muted-foreground/70 mt-2 italic">
+              ⚠ Extrapolated zones may be unreliable
+            </p>
           </div>
         )}
 
