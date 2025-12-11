@@ -6,6 +6,7 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import type { AnalysisResults, AnalysisConfig, ExportOption, ColorScheme, LayerVisibility } from '@/types/spatial';
 import { generateComprehensivePDF, generateMultiPagePDF, generatePdfFilename } from '@/utils/pdfExportUtils';
+import { exportLayerAsGeoTIFF } from '@/utils/geotiffExport';
 
 interface ExportPanelProps {
   results: AnalysisResults | null;
@@ -53,19 +54,19 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, set
   // Define export options based on analysis type
   const singleVariableExports: ExportOption[] = [
     { id: 'full-pdf', label: 'Full Multi-Page PDF', description: '4 pages: Surface, Classified, Accuracy, RPE', format: 'pdf', available: true },
-    { id: 'interpolated', label: 'Interpolated Raster', description: 'Continuous surface (GeoJSON)', format: 'geotiff', available: true },
-    { id: 'classified', label: 'Classified Map', description: 'Class boundaries (GeoJSON)', format: 'geotiff', available: !!results.classified },
-    { id: 'accuracy', label: 'Accuracy Surface', description: 'CV error map (GeoJSON)', format: 'geotiff', available: !!results.accuracy },
-    { id: 'rpe', label: 'RPE Layer', description: 'Reliable extent (GeoJSON)', format: 'shapefile', available: !!results.rpe },
+    { id: 'interpolated', label: 'Interpolated Raster', description: 'Continuous surface (GeoTIFF)', format: 'geotiff', available: true },
+    { id: 'classified', label: 'Classified Map', description: 'Class boundaries (GeoTIFF)', format: 'geotiff', available: !!results.classified },
+    { id: 'accuracy', label: 'Accuracy Surface', description: 'CV error map (GeoTIFF)', format: 'geotiff', available: !!results.accuracy },
+    { id: 'rpe', label: 'RPE Layer', description: 'Reliable extent (GeoTIFF)', format: 'geotiff', available: !!results.rpe },
     { id: 'single-pdf', label: 'Current Layer PDF', description: 'Single page with active layer', format: 'pdf', available: true },
   ];
 
   const predictorExports: ExportOption[] = [
     { id: 'full-pdf', label: 'Full Multi-Page PDF', description: '5 pages: Surface, Residuals, Uncertainty, RPE, Features', format: 'pdf', available: true },
-    { id: 'predicted', label: 'Predicted Surface', description: 'Model output (GeoJSON)', format: 'geotiff', available: true },
-    { id: 'residuals', label: 'Residual Map', description: 'Errors (GeoJSON)', format: 'geotiff', available: !!results.residuals },
-    { id: 'uncertainty', label: 'Uncertainty Map', description: 'Confidence (GeoJSON)', format: 'geotiff', available: !!results.uncertainty },
-    { id: 'rpe', label: 'RPE Layer', description: 'Reliable extent (GeoJSON)', format: 'shapefile', available: !!results.rpe },
+    { id: 'predicted', label: 'Predicted Surface', description: 'Model output (GeoTIFF)', format: 'geotiff', available: true },
+    { id: 'residuals', label: 'Residual Map', description: 'Errors (GeoTIFF)', format: 'geotiff', available: !!results.residuals },
+    { id: 'uncertainty', label: 'Uncertainty Map', description: 'Confidence (GeoTIFF)', format: 'geotiff', available: !!results.uncertainty },
+    { id: 'rpe', label: 'RPE Layer', description: 'Reliable extent (GeoTIFF)', format: 'geotiff', available: !!results.rpe },
     { id: 'importance', label: 'Feature Importance', description: 'Variable rankings (CSV)', format: 'csv', available: !!results.featureImportance },
     { id: 'single-pdf', label: 'Current Layer PDF', description: 'Single page with active layer', format: 'pdf', available: true },
   ];
@@ -99,8 +100,8 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, set
         await handleSinglePdfExport();
       } else if (option.format === 'csv') {
         exportCSV(option.id);
-      } else {
-        exportGeoData(option.id);
+      } else if (option.format === 'geotiff') {
+        exportGeoTIFF(option.id);
       }
       
       toast({
@@ -186,87 +187,8 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, set
     URL.revokeObjectURL(url);
   };
 
-  const exportGeoData = (type: string) => {
-    let data: any = null;
-    let layerName = type;
-    
-    switch (type) {
-      case 'interpolated':
-      case 'predicted':
-        data = results.continuous.grid;
-        layerName = isSingleVariable ? 'InterpolatedSurface' : 'PredictedSurface';
-        break;
-      case 'classified':
-        data = results.classified;
-        layerName = 'ClassifiedSurface';
-        break;
-      case 'accuracy':
-        data = results.accuracy;
-        layerName = 'AccuracySurface';
-        break;
-      case 'residuals':
-        data = results.residuals;
-        layerName = 'ResidualMap';
-        break;
-      case 'uncertainty':
-        data = results.uncertainty;
-        layerName = 'UncertaintyMap';
-        break;
-      case 'rpe':
-        data = results.rpePolygon;
-        layerName = 'RPELayer';
-        break;
-    }
-    
-    if (!data) {
-      throw new Error('No data available for this export');
-    }
-    
-    const geojson = {
-      type: 'FeatureCollection',
-      name: layerName,
-      crs: {
-        type: 'name',
-        properties: { name: 'urn:ogc:def:crs:EPSG::4326' }
-      },
-      metadata: {
-        analysisType: results.analysisType,
-        algorithm: config.algorithm,
-        targetVariable: results.targetVar,
-        predictors: results.predictors,
-        generatedAt: new Date().toISOString(),
-        metrics: results.metrics,
-        rpeMethod: config.rpeMethod,
-        gridResolution: config.gridResolution
-      },
-      features: Array.isArray(data) ? data.map((cell: any, idx: number) => ({
-        type: 'Feature',
-        id: idx,
-        geometry: {
-          type: 'Point',
-          coordinates: [cell.lng, cell.lat]
-        },
-        properties: {
-          value: cell.value,
-          class: cell.class,
-          accuracy: cell.accuracy,
-          residual: cell.residual,
-          uncertainty: cell.uncertainty,
-          reliable: cell.reliable
-        }
-      })) : data
-    };
-    
-    const dateStr = new Date().toISOString().split('T')[0];
-    const filename = `${config.algorithm.toUpperCase()}_${layerName}_${dateStr}.geojson`;
-    
-    const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+  const exportGeoTIFF = (type: string) => {
+    exportLayerAsGeoTIFF(results, type, config);
   };
 
   const getIcon = (option: ExportOption) => {
@@ -388,7 +310,8 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, set
             <ul className="space-y-1 list-disc list-inside">
               <li>RPE marks reliable vs unreliable regions</li>
               <li>PDF filename includes method & timestamp</li>
-              <li>GeoJSON includes full metadata & CRS</li>
+              <li>GeoTIFF files include CRS (EPSG:4326)</li>
+              <li>GeoTIFF compatible with ArcGIS & QGIS</li>
             </ul>
           </div>
         </CollapsibleContent>
