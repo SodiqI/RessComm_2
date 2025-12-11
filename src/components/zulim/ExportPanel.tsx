@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { Download, FileImage, FileText, Table2, Map, Shield, AlertTriangle, ChevronDown, ChevronUp, Loader2, FileStack } from 'lucide-react';
+import { Download, FileImage, FileText, Table2, Map, Shield, AlertTriangle, ChevronDown, ChevronUp, Loader2, FileStack, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import type { AnalysisResults, AnalysisConfig, ExportOption, ColorScheme, LayerVisibility } from '@/types/spatial';
 import { generateComprehensivePDF, generateMultiPagePDF, generatePdfFilename } from '@/utils/pdfExportUtils';
-import { exportLayerAsGeoTIFF } from '@/utils/geotiffExport';
+import { exportLayerAsRaster } from '@/utils/rasterExport';
 
 interface ExportPanelProps {
   results: AnalysisResults | null;
@@ -54,19 +54,19 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, set
   // Define export options based on analysis type
   const singleVariableExports: ExportOption[] = [
     { id: 'full-pdf', label: 'Full Multi-Page PDF', description: '4 pages: Surface, Classified, Accuracy, RPE', format: 'pdf', available: true },
-    { id: 'interpolated', label: 'Interpolated Raster', description: 'Continuous surface (GeoTIFF)', format: 'geotiff', available: true },
-    { id: 'classified', label: 'Classified Map', description: 'Class boundaries (GeoTIFF)', format: 'geotiff', available: !!results.classified },
-    { id: 'accuracy', label: 'Accuracy Surface', description: 'CV error map (GeoTIFF)', format: 'geotiff', available: !!results.accuracy },
-    { id: 'rpe', label: 'RPE Layer', description: 'Reliable extent (GeoTIFF)', format: 'geotiff', available: !!results.rpe },
+    { id: 'interpolated', label: 'Interpolated Raster', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: true },
+    { id: 'classified', label: 'Classified Map', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: !!results.classified },
+    { id: 'accuracy', label: 'Accuracy Surface', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: !!results.accuracy },
+    { id: 'rpe', label: 'RPE Layer', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: !!results.rpe },
     { id: 'single-pdf', label: 'Current Layer PDF', description: 'Single page with active layer', format: 'pdf', available: true },
   ];
 
   const predictorExports: ExportOption[] = [
     { id: 'full-pdf', label: 'Full Multi-Page PDF', description: '5 pages: Surface, Residuals, Uncertainty, RPE, Features', format: 'pdf', available: true },
-    { id: 'predicted', label: 'Predicted Surface', description: 'Model output (GeoTIFF)', format: 'geotiff', available: true },
-    { id: 'residuals', label: 'Residual Map', description: 'Errors (GeoTIFF)', format: 'geotiff', available: !!results.residuals },
-    { id: 'uncertainty', label: 'Uncertainty Map', description: 'Confidence (GeoTIFF)', format: 'geotiff', available: !!results.uncertainty },
-    { id: 'rpe', label: 'RPE Layer', description: 'Reliable extent (GeoTIFF)', format: 'geotiff', available: !!results.rpe },
+    { id: 'predicted', label: 'Predicted Surface', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: true },
+    { id: 'residuals', label: 'Residual Map', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: !!results.residuals },
+    { id: 'uncertainty', label: 'Uncertainty Map', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: !!results.uncertainty },
+    { id: 'rpe', label: 'RPE Layer', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: !!results.rpe },
     { id: 'importance', label: 'Feature Importance', description: 'Variable rankings (CSV)', format: 'csv', available: !!results.featureImportance },
     { id: 'single-pdf', label: 'Current Layer PDF', description: 'Single page with active layer', format: 'pdf', available: true },
   ];
@@ -101,7 +101,7 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, set
       } else if (option.format === 'csv') {
         exportCSV(option.id);
       } else if (option.format === 'geotiff') {
-        exportGeoTIFF(option.id);
+        await exportRasterLayer(option.id);
       }
       
       toast({
@@ -187,15 +187,15 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, set
     URL.revokeObjectURL(url);
   };
 
-  const exportGeoTIFF = (type: string) => {
-    exportLayerAsGeoTIFF(results, type, config);
+  const exportRasterLayer = async (type: string) => {
+    await exportLayerAsRaster(results, type, config);
   };
 
   const getIcon = (option: ExportOption) => {
     if (option.id === 'full-pdf') return FileStack;
     switch (option.format) {
       case 'geotiff':
-        return Map;
+        return Package;
       case 'shapefile':
         return Shield;
       case 'csv':
@@ -308,10 +308,10 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, set
           <div className="mt-3 p-3 bg-sage-light rounded-lg text-xs text-muted-foreground">
             <p className="font-medium text-foreground mb-1">Export Notes:</p>
             <ul className="space-y-1 list-disc list-inside">
-              <li>RPE marks reliable vs unreliable regions</li>
-              <li>PDF filename includes method & timestamp</li>
-              <li>GeoTIFF files include CRS (EPSG:4326)</li>
-              <li>GeoTIFF compatible with ArcGIS & QGIS</li>
+              <li>Raster exports include .asc + .prj + metadata</li>
+              <li>Compatible with ArcGIS, QGIS & other GIS</li>
+              <li>Uses WGS84 (EPSG:4326) coordinate system</li>
+              <li>NoData value: -9999</li>
             </ul>
           </div>
         </CollapsibleContent>
