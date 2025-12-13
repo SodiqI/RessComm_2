@@ -3,6 +3,7 @@ import { Upload, Database, FileText, AlertCircle, CheckCircle2 } from 'lucide-re
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 import type { DataPoint, UploadedData } from '@/types/spatial';
 import { DEMO_DATA } from '@/utils/demoData';
 
@@ -143,27 +144,102 @@ export function DataUpload({ onDataLoaded, uploadedData }: DataUploadProps) {
     reader.readAsText(file);
   }, [onDataLoaded, toast]);
 
+  const parseExcel = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        // Use the first sheet
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        
+        // Convert to JSON
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        
+        if (jsonData.length === 0) {
+          toast({ title: "Error", description: "Excel file is empty", variant: "destructive" });
+          return;
+        }
+
+        const headers = Object.keys(jsonData[0] as object);
+        const latCol = headers.find(h => h.toLowerCase().includes('lat'));
+        const lngCol = headers.find(h => 
+          h.toLowerCase().includes('lon') || h.toLowerCase().includes('lng')
+        );
+
+        if (!latCol || !lngCol) {
+          toast({ 
+            title: "Error", 
+            description: "Excel must contain latitude and longitude columns", 
+            variant: "destructive" 
+          });
+          return;
+        }
+
+        const dataPoints: DataPoint[] = (jsonData as Record<string, any>[])
+          .filter(row => row[latCol] != null && row[lngCol] != null)
+          .map(row => ({
+            lat: parseFloat(row[latCol]),
+            lng: parseFloat(row[lngCol]),
+            properties: row
+          }));
+
+        if (dataPoints.length < 3) {
+          toast({ 
+            title: "Error", 
+            description: "Dataset must contain at least 3 valid points", 
+            variant: "destructive" 
+          });
+          return;
+        }
+
+        onDataLoaded({
+          type: 'excel',
+          headers,
+          data: jsonData,
+          points: dataPoints
+        });
+
+        toast({
+          title: "Data loaded successfully",
+          description: `${dataPoints.length} points loaded from ${file.name}`,
+        });
+      } catch (error) {
+        toast({ 
+          title: "Error", 
+          description: `Error parsing Excel: ${(error as Error).message}`, 
+          variant: "destructive" 
+        });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }, [onDataLoaded, toast]);
+
   const handleFile = useCallback((file: File) => {
     const fileName = file.name.toLowerCase();
     
     if (fileName.endsWith('.csv')) {
       parseCSV(file);
+    } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+      parseExcel(file);
     } else if (fileName.endsWith('.geojson') || fileName.endsWith('.json')) {
       parseGeoJSON(file);
     } else if (fileName.endsWith('.zip')) {
       toast({ 
         title: "Coming soon", 
-        description: "Shapefile support is coming soon. Please use CSV or GeoJSON.", 
+        description: "Shapefile support is coming soon. Please use CSV, Excel, or GeoJSON.", 
         variant: "default" 
       });
     } else {
       toast({ 
         title: "Unsupported format", 
-        description: "Please use CSV, GeoJSON, or Shapefile (.zip)", 
+        description: "Please use CSV, Excel (.xlsx/.xls), GeoJSON, or Shapefile (.zip)", 
         variant: "destructive" 
       });
     }
-  }, [parseCSV, parseGeoJSON, toast]);
+  }, [parseCSV, parseExcel, parseGeoJSON, toast]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -199,7 +275,7 @@ export function DataUpload({ onDataLoaded, uploadedData }: DataUploadProps) {
           type="file"
           id="file-input"
           className="hidden"
-          accept=".csv,.geojson,.json,.zip"
+          accept=".csv,.xlsx,.xls,.geojson,.json,.zip"
           onChange={handleFileInput}
         />
         <Upload className="w-10 h-10 text-forest-light mx-auto mb-3" />
@@ -208,7 +284,7 @@ export function DataUpload({ onDataLoaded, uploadedData }: DataUploadProps) {
           or click to browse
         </p>
         <p className="text-xs text-muted-foreground mt-2">
-          Supported: CSV, GeoJSON, Shapefile (.zip)
+          Supported: CSV, Excel (.xlsx/.xls), GeoJSON, Shapefile (.zip)
         </p>
       </div>
 

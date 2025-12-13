@@ -18,7 +18,7 @@ export interface GridCell {
 }
 
 export interface UploadedData {
-  type: 'csv' | 'geojson' | 'demo';
+  type: 'csv' | 'geojson' | 'excel' | 'demo';
   headers: string[];
   data: any[];
   points: DataPoint[];
