@@ -7,12 +7,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { toast } from 'sonner';
 import { Plus, Trash2, Download, RotateCcw, RotateCw, Eye, Home, FileSpreadsheet, Layers } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
+import { eastingNorthingToLatLng } from '@/utils/coordinateUtils';
 import 'leaflet/dist/leaflet.css';
+
+type CoordType = 'latLng' | 'eastingNorthing';
 
 interface Coordinate {
   lat: number;
@@ -79,6 +83,7 @@ const ManualPlotter = () => {
   const [polygonId, setPolygonId] = useState<number>(1);
   const [polygonName, setPolygonName] = useState('');
   const [category, setCategory] = useState('residential');
+  const [coordType, setCoordType] = useState<CoordType>('latLng');
   const [currentCoords, setCurrentCoords] = useState<Coordinate[]>([]);
   const [polygons, setPolygons] = useState<PlottedPolygon[]>([]);
   const [selectedPolygon, setSelectedPolygon] = useState<number | null>(null);
@@ -105,10 +110,15 @@ const ManualPlotter = () => {
   }, []);
 
   const addCoordinate = () => {
-    const lat = parseFloat(latInput);
-    const lng = parseFloat(lngInput);
-    if (!isNaN(lat) && !isNaN(lng)) {
-      setCurrentCoords(prev => [...prev, { lat, lng }]);
+    const rawX = parseFloat(lngInput);
+    const rawY = parseFloat(latInput);
+    if (!isNaN(rawX) && !isNaN(rawY)) {
+      if (coordType === 'eastingNorthing') {
+        const { lat, lng } = eastingNorthingToLatLng(rawX, rawY);
+        setCurrentCoords(prev => [...prev, { lat, lng }]);
+      } else {
+        setCurrentCoords(prev => [...prev, { lat: rawY, lng: rawX }]);
+      }
       setLatInput('');
       setLngInput('');
     } else {
@@ -123,7 +133,14 @@ const ManualPlotter = () => {
     for (const line of lines) {
       const parts = line.split(',').map(p => parseFloat(p.trim()));
       if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-        newCoords.push({ lat: parts[0], lng: parts[1] });
+        if (coordType === 'eastingNorthing') {
+          // For bulk: format is easting,northing
+          const { lat, lng } = eastingNorthingToLatLng(parts[0], parts[1]);
+          newCoords.push({ lat, lng });
+        } else {
+          // For bulk: format is lat,lng
+          newCoords.push({ lat: parts[0], lng: parts[1] });
+        }
       }
     }
     
@@ -390,21 +407,44 @@ const ManualPlotter = () => {
               <Input value={polygonName} onChange={e => setPolygonName(e.target.value)} placeholder="Enter name" />
             </div>
 
+            {/* Coordinate Type Selection */}
+            <div>
+              <Label>Coordinate System</Label>
+              <RadioGroup value={coordType} onValueChange={(v) => setCoordType(v as CoordType)} className="mt-2">
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="latLng" id="manual-latLng" />
+                  <Label htmlFor="manual-latLng" className="text-sm">Lat/Lng (WGS84)</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="eastingNorthing" id="manual-eastingNorthing" />
+                  <Label htmlFor="manual-eastingNorthing" className="text-sm">Easting/Northing (UTM)</Label>
+                </div>
+              </RadioGroup>
+            </div>
+
             <div>
               <Label>Add Coordinate</Label>
               <div className="flex gap-2">
-                <Input placeholder="Latitude" value={latInput} onChange={e => setLatInput(e.target.value)} />
-                <Input placeholder="Longitude" value={lngInput} onChange={e => setLngInput(e.target.value)} />
+                <Input 
+                  placeholder={coordType === 'eastingNorthing' ? 'Northing' : 'Latitude'} 
+                  value={latInput} 
+                  onChange={e => setLatInput(e.target.value)} 
+                />
+                <Input 
+                  placeholder={coordType === 'eastingNorthing' ? 'Easting' : 'Longitude'} 
+                  value={lngInput} 
+                  onChange={e => setLngInput(e.target.value)} 
+                />
                 <Button size="icon" onClick={addCoordinate}><Plus className="w-4 h-4" /></Button>
               </div>
             </div>
 
             <div>
-              <Label>Bulk Coordinates (lat,lng per line)</Label>
+              <Label>{coordType === 'eastingNorthing' ? 'Bulk Coordinates (easting,northing per line)' : 'Bulk Coordinates (lat,lng per line)'}</Label>
               <Textarea 
                 value={bulkCoords} 
                 onChange={e => setBulkCoords(e.target.value)}
-                placeholder="51.505,-0.09&#10;51.51,-0.1"
+                placeholder={coordType === 'eastingNorthing' ? '500000,6000000\n500100,6000100' : '51.505,-0.09\n51.51,-0.1'}
                 className="font-mono text-sm"
               />
               <Button onClick={addBulkCoordinates} size="sm" className="mt-2">Add Multiple</Button>
