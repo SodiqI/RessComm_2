@@ -6,6 +6,7 @@ import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import type { DataPoint, UploadedData } from '@/types/spatial';
 import { DEMO_DATA } from '@/utils/demoData';
+import { detectCoordinateColumns, eastingNorthingToLatLng } from '@/utils/coordinateUtils';
 
 interface DataUploadProps {
   onDataLoaded: (data: UploadedData) => void;
@@ -41,27 +42,30 @@ export function DataUpload({ onDataLoaded, uploadedData }: DataUploadProps) {
         }
 
         const headers = Object.keys(results.data[0] as object);
-        const latCol = headers.find(h => h.toLowerCase().includes('lat'));
-        const lngCol = headers.find(h => 
-          h.toLowerCase().includes('lon') || h.toLowerCase().includes('lng')
-        );
+        const coordInfo = detectCoordinateColumns(headers);
 
-        if (!latCol || !lngCol) {
+        if (!coordInfo) {
           toast({ 
             title: "Error", 
-            description: "CSV must contain latitude and longitude columns", 
+            description: "CSV must contain Latitude/Longitude or Easting/Northing columns", 
             variant: "destructive" 
           });
           return;
         }
 
         const dataPoints: DataPoint[] = (results.data as Record<string, any>[])
-          .filter(row => row[latCol] && row[lngCol])
-          .map(row => ({
-            lat: parseFloat(row[latCol]),
-            lng: parseFloat(row[lngCol]),
-            properties: row
-          }));
+          .filter(row => row[coordInfo.xCol] != null && row[coordInfo.yCol] != null)
+          .map(row => {
+            const x = parseFloat(row[coordInfo.xCol]);
+            const y = parseFloat(row[coordInfo.yCol]);
+            
+            if (coordInfo.type === 'eastingNorthing') {
+              const { lat, lng } = eastingNorthingToLatLng(x, y);
+              return { lat, lng, properties: row };
+            }
+            return { lat: y, lng: x, properties: row };
+          })
+          .filter(p => !isNaN(p.lat) && !isNaN(p.lng));
 
         if (dataPoints.length < 3) {
           toast({ 
@@ -72,6 +76,7 @@ export function DataUpload({ onDataLoaded, uploadedData }: DataUploadProps) {
           return;
         }
 
+        const coordType = coordInfo.type === 'eastingNorthing' ? 'Easting/Northing' : 'Lat/Lng';
         onDataLoaded({
           type: 'csv',
           headers,
@@ -81,7 +86,7 @@ export function DataUpload({ onDataLoaded, uploadedData }: DataUploadProps) {
 
         toast({
           title: "Data loaded successfully",
-          description: `${dataPoints.length} points loaded from ${file.name}`,
+          description: `${dataPoints.length} points loaded from ${file.name} (${coordType})`,
         });
       },
       error: (error) => {
@@ -164,27 +169,30 @@ export function DataUpload({ onDataLoaded, uploadedData }: DataUploadProps) {
         }
 
         const headers = Object.keys(jsonData[0] as object);
-        const latCol = headers.find(h => h.toLowerCase().includes('lat'));
-        const lngCol = headers.find(h => 
-          h.toLowerCase().includes('lon') || h.toLowerCase().includes('lng')
-        );
+        const coordInfo = detectCoordinateColumns(headers);
 
-        if (!latCol || !lngCol) {
+        if (!coordInfo) {
           toast({ 
             title: "Error", 
-            description: "Excel must contain latitude and longitude columns", 
+            description: "Excel must contain Latitude/Longitude or Easting/Northing columns", 
             variant: "destructive" 
           });
           return;
         }
 
         const dataPoints: DataPoint[] = (jsonData as Record<string, any>[])
-          .filter(row => row[latCol] != null && row[lngCol] != null)
-          .map(row => ({
-            lat: parseFloat(row[latCol]),
-            lng: parseFloat(row[lngCol]),
-            properties: row
-          }));
+          .filter(row => row[coordInfo.xCol] != null && row[coordInfo.yCol] != null)
+          .map(row => {
+            const x = parseFloat(row[coordInfo.xCol]);
+            const y = parseFloat(row[coordInfo.yCol]);
+            
+            if (coordInfo.type === 'eastingNorthing') {
+              const { lat, lng } = eastingNorthingToLatLng(x, y);
+              return { lat, lng, properties: row };
+            }
+            return { lat: y, lng: x, properties: row };
+          })
+          .filter(p => !isNaN(p.lat) && !isNaN(p.lng));
 
         if (dataPoints.length < 3) {
           toast({ 
@@ -195,6 +203,7 @@ export function DataUpload({ onDataLoaded, uploadedData }: DataUploadProps) {
           return;
         }
 
+        const coordType = coordInfo.type === 'eastingNorthing' ? 'Easting/Northing' : 'Lat/Lng';
         onDataLoaded({
           type: 'excel',
           headers,
@@ -204,7 +213,7 @@ export function DataUpload({ onDataLoaded, uploadedData }: DataUploadProps) {
 
         toast({
           title: "Data loaded successfully",
-          description: `${dataPoints.length} points loaded from ${file.name}`,
+          description: `${dataPoints.length} points loaded from ${file.name} (${coordType})`,
         });
       } catch (error) {
         toast({ 

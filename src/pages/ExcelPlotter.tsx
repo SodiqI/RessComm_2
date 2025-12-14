@@ -12,7 +12,10 @@ import { Plus, Trash2, Download, RotateCcw, RotateCw, Upload, Home, MousePointer
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
+import { eastingNorthingToLatLng, isProjectedCoordinate } from '@/utils/coordinateUtils';
 import 'leaflet/dist/leaflet.css';
+
+type CoordType = 'latLng' | 'eastingNorthing';
 
 interface PointConfig {
   id: number;
@@ -82,6 +85,7 @@ function FitBounds({ areas }: { areas: PlottedArea[] }) {
 const ExcelPlotter = () => {
   const [excelData, setExcelData] = useState<Record<string, unknown>[]>([]);
   const [excelColumns, setExcelColumns] = useState<string[]>([]);
+  const [coordType, setCoordType] = useState<CoordType>('latLng');
   const [pointConfigs, setPointConfigs] = useState<PointConfig[]>([
     { id: 1, latColumn: '', lngColumn: '' },
     { id: 2, latColumn: '', lngColumn: '' }
@@ -163,11 +167,16 @@ const ExcelPlotter = () => {
       const points: [number, number][] = [];
 
       pointConfigs.forEach(config => {
-        const lat = parseFloat(String(row[config.latColumn]));
-        const lng = parseFloat(String(row[config.lngColumn]));
+        const rawX = parseFloat(String(row[config.lngColumn]));
+        const rawY = parseFloat(String(row[config.latColumn]));
 
-        if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
-          points.push([lat, lng]);
+        if (!isNaN(rawX) && !isNaN(rawY) && rawX !== 0 && rawY !== 0) {
+          if (coordType === 'eastingNorthing') {
+            const { lat, lng } = eastingNorthingToLatLng(rawX, rawY);
+            points.push([lat, lng]);
+          } else {
+            points.push([rawY, rawX]);
+          }
         }
       });
 
@@ -387,9 +396,24 @@ const ExcelPlotter = () => {
             </div>
           </div>
 
+          {/* Coordinate Type Selection */}
+          <div className={`bg-muted/50 rounded-lg p-4 space-y-3 ${excelData.length === 0 ? 'opacity-50 pointer-events-none' : ''}`}>
+            <h2 className="font-semibold text-lg border-b border-border pb-2">2. Coordinate System</h2>
+            <RadioGroup value={coordType} onValueChange={(v) => setCoordType(v as CoordType)}>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="latLng" id="latLng" />
+                <Label htmlFor="latLng">Latitude / Longitude (WGS84)</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="eastingNorthing" id="eastingNorthing" />
+                <Label htmlFor="eastingNorthing">Easting / Northing (UTM)</Label>
+              </div>
+            </RadioGroup>
+          </div>
+
           {/* Plot Type */}
           <div className={`bg-muted/50 rounded-lg p-4 space-y-3 ${excelData.length === 0 ? 'opacity-50 pointer-events-none' : ''}`}>
-            <h2 className="font-semibold text-lg border-b border-border pb-2">2. Configure Plot Type</h2>
+            <h2 className="font-semibold text-lg border-b border-border pb-2">3. Configure Plot Type</h2>
             <RadioGroup value={plotType} onValueChange={(v) => setPlotType(v as 'area' | 'distance')}>
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="area" id="area" />
@@ -404,14 +428,14 @@ const ExcelPlotter = () => {
 
           {/* Points Configuration */}
           <div className={`bg-muted/50 rounded-lg p-4 space-y-3 ${excelData.length === 0 ? 'opacity-50 pointer-events-none' : ''}`}>
-            <h2 className="font-semibold text-lg border-b border-border pb-2">3. Configure Points</h2>
+            <h2 className="font-semibold text-lg border-b border-border pb-2">4. Configure Points</h2>
             <div className="space-y-3 max-h-48 overflow-y-auto">
               {pointConfigs.map((config, index) => (
                 <div key={config.id} className="bg-background rounded p-3 space-y-2">
                   <p className="font-medium text-sm">Point {config.id}</p>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label className="text-xs">Latitude Column</Label>
+                      <Label className="text-xs">{coordType === 'eastingNorthing' ? 'Northing Column' : 'Latitude Column'}</Label>
                       <Select value={config.latColumn} onValueChange={(v) => updatePointConfig(index, 'latColumn', v)}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select" /></SelectTrigger>
                         <SelectContent>
@@ -422,7 +446,7 @@ const ExcelPlotter = () => {
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-xs">Longitude Column</Label>
+                      <Label className="text-xs">{coordType === 'eastingNorthing' ? 'Easting Column' : 'Longitude Column'}</Label>
                       <Select value={config.lngColumn} onValueChange={(v) => updatePointConfig(index, 'lngColumn', v)}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select" /></SelectTrigger>
                         <SelectContent>
@@ -444,7 +468,7 @@ const ExcelPlotter = () => {
 
           {/* Plot Controls */}
           <div className={`bg-muted/50 rounded-lg p-4 space-y-3 ${excelData.length === 0 ? 'opacity-50 pointer-events-none' : ''}`}>
-            <h2 className="font-semibold text-lg border-b border-border pb-2">4. Plot Data</h2>
+            <h2 className="font-semibold text-lg border-b border-border pb-2">5. Plot Data</h2>
             <div className="flex gap-2 flex-wrap">
               <Button onClick={plotData} className="bg-forest-light hover:bg-forest-mid">Plot All</Button>
               <Button onClick={clearAll} variant="destructive">Clear All</Button>
