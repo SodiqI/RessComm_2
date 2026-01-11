@@ -10,8 +10,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Trash2, Download, RotateCcw, RotateCw, Eye, Home, FileSpreadsheet, Layers, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, Download, RotateCcw, RotateCw, Eye, Home, FileSpreadsheet, Layers, AlertCircle, CheckCircle, FileText } from 'lucide-react';
 import JSZip from 'jszip';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { exportPolygonPdf, exportMultiplePolygonsPdf, LAND_USE_CATEGORIES, type AreaUnit, type PolygonData } from '@/utils/polygonPdfExport';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import { eastingNorthingToLatLng } from '@/utils/coordinateUtils';
@@ -136,6 +138,7 @@ interface PlottedPolygon {
   id: number;
   name: string;
   category: string;
+  landUse: string;
   coordinates: Coordinate[];
   area: number;
   hectares: number;
@@ -192,6 +195,7 @@ const ManualPlotter = () => {
   const [polygonId, setPolygonId] = useState<number>(1);
   const [polygonName, setPolygonName] = useState('');
   const [category, setCategory] = useState('residential');
+  const [landUse, setLandUse] = useState('agricultural');
   const [coordType, setCoordType] = useState<CoordType>('latLng');
   const [inputMode, setInputMode] = useState<InputMode>('single');
   const [currentCoords, setCurrentCoords] = useState<Coordinate[]>([]);
@@ -209,7 +213,15 @@ const ManualPlotter = () => {
   const [excelColumns, setExcelColumns] = useState<string[]>([]);
   const [idColumn, setIdColumn] = useState('');
   
+  // PDF Export state
+  const [pdfExportOpen, setPdfExportOpen] = useState(false);
+  const [pdfAreaUnit, setPdfAreaUnit] = useState<AreaUnit>('hectares');
+  const [pdfExportType, setPdfExportType] = useState<'single' | 'all'>('single');
+  const [pdfSelectedPolygon, setPdfSelectedPolygon] = useState<number | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
   
   // Preview bulk parsing result (debounced effect via useMemo)
   const bulkPreview = useMemo(() => {
@@ -283,6 +295,7 @@ const ManualPlotter = () => {
       id: polygonId,
       name: polygonName || `Polygon ${polygonId}`,
       category,
+      landUse,
       coordinates: [...currentCoords],
       area,
       hectares: area / 10000,
@@ -461,6 +474,77 @@ const ManualPlotter = () => {
     toast.success('Shapefile package exported');
   };
 
+  // PDF Export handler
+  const handlePdfExport = async () => {
+    if (pdfExportType === 'single') {
+      const polygon = polygons.find(p => p.id === pdfSelectedPolygon);
+      if (!polygon) {
+        toast.error('Please select a polygon to export');
+        return;
+      }
+      
+      setIsExporting(true);
+      try {
+        const polygonData: PolygonData = {
+          id: polygon.id,
+          name: polygon.name,
+          landUse: polygon.landUse,
+          coordinates: polygon.coordinates,
+          area: polygon.area,
+          hectares: polygon.hectares,
+          sqKm: polygon.sqKm,
+        };
+        
+        await exportPolygonPdf(polygonData, {
+          areaUnit: pdfAreaUnit,
+          polygons: [polygonData],
+          dataSource: 'Manual Plotter',
+          mapElement: mapRef.current,
+        });
+        
+        toast.success('PDF exported successfully');
+        setPdfExportOpen(false);
+      } catch (error) {
+        toast.error('Failed to export PDF');
+        console.error(error);
+      } finally {
+        setIsExporting(false);
+      }
+    } else {
+      if (polygons.length === 0) {
+        toast.error('No polygons to export');
+        return;
+      }
+      
+      setIsExporting(true);
+      try {
+        const polygonDataList: PolygonData[] = polygons.map(p => ({
+          id: p.id,
+          name: p.name,
+          landUse: p.landUse,
+          coordinates: p.coordinates,
+          area: p.area,
+          hectares: p.hectares,
+          sqKm: p.sqKm,
+        }));
+        
+        await exportMultiplePolygonsPdf(polygonDataList, {
+          areaUnit: pdfAreaUnit,
+          polygons: polygonDataList,
+          dataSource: 'Manual Plotter',
+        });
+        
+        toast.success('PDF report exported successfully');
+        setPdfExportOpen(false);
+      } catch (error) {
+        toast.error('Failed to export PDF');
+        console.error(error);
+      } finally {
+        setIsExporting(false);
+      }
+    }
+  };
+
   const currentArea = calculateGeodesicArea(currentCoords);
 
   const getCategoryColor = (cat: string) => {
@@ -519,9 +603,22 @@ const ManualPlotter = () => {
               </div>
             </div>
             
-            <div>
-              <Label>Polygon Name</Label>
-              <Input value={polygonName} onChange={e => setPolygonName(e.target.value)} placeholder="Enter name" />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Polygon Name</Label>
+                <Input value={polygonName} onChange={e => setPolygonName(e.target.value)} placeholder="Enter name" />
+              </div>
+              <div>
+                <Label>Land Use Purpose</Label>
+                <Select value={landUse} onValueChange={setLandUse}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {LAND_USE_CATEGORIES.map(cat => (
+                      <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Coordinate System Selection */}
@@ -750,13 +847,71 @@ const ManualPlotter = () => {
           {/* Export Options */}
           <div className="bg-muted/50 rounded-lg p-4 space-y-3">
             <h2 className="font-semibold text-lg border-b border-border pb-2">Export Options</h2>
-            <div className="grid grid-cols-2 gap-2">
-              <Button onClick={exportKMZ} variant="outline">
-                <Download className="w-4 h-4 mr-2" /> KMZ
+            <div className="grid grid-cols-3 gap-2">
+              <Button onClick={exportKMZ} variant="outline" size="sm">
+                <Download className="w-4 h-4 mr-1" /> KMZ
               </Button>
-              <Button onClick={exportShapefile} variant="outline">
-                <Download className="w-4 h-4 mr-2" /> Shapefile
+              <Button onClick={exportShapefile} variant="outline" size="sm">
+                <Download className="w-4 h-4 mr-1" /> SHP
               </Button>
+              <Dialog open={pdfExportOpen} onOpenChange={setPdfExportOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={polygons.length === 0}>
+                    <FileText className="w-4 h-4 mr-1" /> PDF
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Export PDF Report</DialogTitle>
+                    <DialogDescription>Generate a detailed polygon analysis report</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div>
+                      <Label>Export Type</Label>
+                      <RadioGroup value={pdfExportType} onValueChange={(v) => setPdfExportType(v as 'single' | 'all')} className="mt-2">
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="single" id="pdf-single" />
+                          <Label htmlFor="pdf-single">Single Polygon</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="all" id="pdf-all" />
+                          <Label htmlFor="pdf-all">All Polygons Summary</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+                    {pdfExportType === 'single' && (
+                      <div>
+                        <Label>Select Polygon</Label>
+                        <Select value={pdfSelectedPolygon?.toString() || ''} onValueChange={(v) => setPdfSelectedPolygon(parseInt(v))}>
+                          <SelectTrigger><SelectValue placeholder="Choose polygon" /></SelectTrigger>
+                          <SelectContent>
+                            {polygons.map(p => (
+                              <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    <div>
+                      <Label>Area Unit</Label>
+                      <Select value={pdfAreaUnit} onValueChange={(v) => setPdfAreaUnit(v as AreaUnit)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="hectares">Hectares (ha)</SelectItem>
+                          <SelectItem value="acres">Acres</SelectItem>
+                          <SelectItem value="sqMeters">Square Meters (m²)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setPdfExportOpen(false)}>Cancel</Button>
+                    <Button onClick={handlePdfExport} disabled={isExporting} className="bg-forest-light hover:bg-forest-mid">
+                      {isExporting ? 'Exporting...' : 'Export PDF'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
 
@@ -774,7 +929,7 @@ const ManualPlotter = () => {
         </div>
 
         {/* Map */}
-        <div className="flex-1">
+        <div className="flex-1" ref={mapRef}>
           <MapContainer center={[9.06, 7.49]} zoom={6} style={{ height: '100%', width: '100%' }}>
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'

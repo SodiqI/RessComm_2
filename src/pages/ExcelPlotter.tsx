@@ -8,10 +8,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { toast } from 'sonner';
-import { Plus, Trash2, Download, RotateCcw, RotateCw, Upload, Home, MousePointer, Layers } from 'lucide-react';
+import { Plus, Trash2, Download, RotateCcw, RotateCw, Upload, Home, MousePointer, Layers, FileText } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { exportMultiplePolygonsPdf, LAND_USE_CATEGORIES, type AreaUnit, type PolygonData } from '@/utils/polygonPdfExport';
 import { eastingNorthingToLatLng, isProjectedCoordinate } from '@/utils/coordinateUtils';
 import 'leaflet/dist/leaflet.css';
 
@@ -508,8 +510,33 @@ const ExcelPlotter = () => {
             <h2 className="font-semibold text-lg border-b border-border pb-2">Export Data</h2>
             <div className="flex gap-2 flex-wrap">
               <Button onClick={exportKMZ} variant="outline" size="sm"><Download className="w-4 h-4 mr-1" /> KMZ</Button>
-              <Button onClick={exportShapefile} variant="outline" size="sm"><Download className="w-4 h-4 mr-1" /> Shapefile</Button>
+              <Button onClick={exportShapefile} variant="outline" size="sm"><Download className="w-4 h-4 mr-1" /> SHP</Button>
               <Button onClick={exportJSON} variant="outline" size="sm"><Download className="w-4 h-4 mr-1" /> JSON</Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                disabled={plottedAreas.filter(a => a.type === 'area').length === 0}
+                onClick={async () => {
+                  const areas = plottedAreas.filter(a => a.type === 'area');
+                  if (areas.length === 0) {
+                    toast.error('No areas to export');
+                    return;
+                  }
+                  const polygonData: PolygonData[] = areas.map(a => ({
+                    id: a.id,
+                    name: `Area ${a.id}`,
+                    landUse: 'agricultural',
+                    coordinates: a.points.map(p => ({ lat: p[0], lng: p[1] })),
+                    area: a.area || 0,
+                    hectares: a.hectares || 0,
+                    sqKm: a.sqKm || 0,
+                  }));
+                  await exportMultiplePolygonsPdf(polygonData, { areaUnit: 'hectares', polygons: polygonData, dataSource: 'Excel Upload' });
+                  toast.success('PDF exported');
+                }}
+              >
+                <FileText className="w-4 h-4 mr-1" /> PDF
+              </Button>
             </div>
           </div>
 
