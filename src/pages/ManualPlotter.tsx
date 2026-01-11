@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Polygon, useMapEvents, useMap, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -8,8 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Trash2, Download, RotateCcw, RotateCw, Eye, Home, FileSpreadsheet, Layers } from 'lucide-react';
+import { Plus, Trash2, Download, RotateCcw, RotateCw, Eye, Home, FileSpreadsheet, Layers, AlertCircle, CheckCircle } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
@@ -17,6 +18,114 @@ import { eastingNorthingToLatLng } from '@/utils/coordinateUtils';
 import 'leaflet/dist/leaflet.css';
 
 type CoordType = 'latLng' | 'eastingNorthing';
+type InputMode = 'single' | 'bulk';
+
+interface ParsedCoordinate {
+  lat: number;
+  lng: number;
+  lineNumber: number;
+  original: string;
+}
+
+interface ParseError {
+  lineNumber: number;
+  line: string;
+  reason: string;
+}
+
+interface BulkParseResult {
+  valid: ParsedCoordinate[];
+  errors: ParseError[];
+}
+
+// Parse bulk coordinates with multiple format support
+function parseBulkCoordinates(
+  input: string, 
+  coordType: CoordType
+): BulkParseResult {
+  const lines = input.split('\n');
+  const valid: ParsedCoordinate[] = [];
+  const errors: ParseError[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const lineNumber = i + 1;
+    const line = lines[i].trim();
+    
+    // Skip empty lines
+    if (!line) continue;
+    
+    // Try different delimiters: comma, space, tab
+    let parts: string[] = [];
+    if (line.includes(',')) {
+      parts = line.split(',').map(p => p.trim());
+    } else if (line.includes('\t')) {
+      parts = line.split('\t').map(p => p.trim());
+    } else {
+      parts = line.split(/\s+/).map(p => p.trim());
+    }
+    
+    // Filter out empty parts
+    parts = parts.filter(p => p !== '');
+    
+    if (parts.length < 2) {
+      errors.push({
+        lineNumber,
+        line,
+        reason: 'Expected 2 values (lat/lng or easting/northing)'
+      });
+      continue;
+    }
+    
+    const val1 = parseFloat(parts[0]);
+    const val2 = parseFloat(parts[1]);
+    
+    if (isNaN(val1) || isNaN(val2)) {
+      errors.push({
+        lineNumber,
+        line,
+        reason: 'Invalid number format'
+      });
+      continue;
+    }
+    
+    let lat: number;
+    let lng: number;
+    
+    if (coordType === 'eastingNorthing') {
+      // Format: easting, northing
+      const converted = eastingNorthingToLatLng(val1, val2);
+      lat = converted.lat;
+      lng = converted.lng;
+    } else {
+      // Format: lat, lng
+      lat = val1;
+      lng = val2;
+    }
+    
+    // Validate lat/lng bounds
+    if (lat < -90 || lat > 90) {
+      errors.push({
+        lineNumber,
+        line,
+        reason: `Latitude ${lat.toFixed(4)} out of range [-90, 90]`
+      });
+      continue;
+    }
+    
+    if (lng < -180 || lng > 180) {
+      errors.push({
+        lineNumber,
+        line,
+        reason: `Longitude ${lng.toFixed(4)} out of range [-180, 180]`
+      });
+      continue;
+    }
+    
+    valid.push({ lat, lng, lineNumber, original: line });
+  }
+  
+  return { valid, errors };
+}
 
 interface Coordinate {
   lat: number;
@@ -84,6 +193,7 @@ const ManualPlotter = () => {
   const [polygonName, setPolygonName] = useState('');
   const [category, setCategory] = useState('residential');
   const [coordType, setCoordType] = useState<CoordType>('latLng');
+  const [inputMode, setInputMode] = useState<InputMode>('single');
   const [currentCoords, setCurrentCoords] = useState<Coordinate[]>([]);
   const [polygons, setPolygons] = useState<PlottedPolygon[]>([]);
   const [selectedPolygon, setSelectedPolygon] = useState<number | null>(null);
@@ -92,6 +202,7 @@ const ManualPlotter = () => {
   const [lngInput, setLngInput] = useState('');
   const [undoStack, setUndoStack] = useState<PlottedPolygon[][]>([]);
   const [redoStack, setRedoStack] = useState<PlottedPolygon[][]>([]);
+  const [lastBulkResult, setLastBulkResult] = useState<BulkParseResult | null>(null);
   
   // Excel joining state
   const [excelData, setExcelData] = useState<Record<string, unknown>[]>([]);
@@ -99,6 +210,12 @@ const ManualPlotter = () => {
   const [idColumn, setIdColumn] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Preview bulk parsing result (debounced effect via useMemo)
+  const bulkPreview = useMemo(() => {
+    if (!bulkCoords.trim()) return null;
+    return parseBulkCoordinates(bulkCoords, coordType);
+  }, [bulkCoords, coordType]);
 
   const saveState = useCallback(() => {
     setUndoStack(prev => [...prev.slice(-19), [...polygons]]);
@@ -126,32 +243,32 @@ const ManualPlotter = () => {
     }
   };
 
-  const addBulkCoordinates = () => {
-    const lines = bulkCoords.split('\n').filter(l => l.trim());
-    const newCoords: Coordinate[] = [];
+  const addBulkCoordinates = useCallback(() => {
+    if (!bulkCoords.trim()) {
+      toast.error('Please enter coordinates');
+      return;
+    }
+
+    const result = parseBulkCoordinates(bulkCoords, coordType);
+    setLastBulkResult(result);
     
-    for (const line of lines) {
-      const parts = line.split(',').map(p => parseFloat(p.trim()));
-      if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-        if (coordType === 'eastingNorthing') {
-          // For bulk: format is easting,northing
-          const { lat, lng } = eastingNorthingToLatLng(parts[0], parts[1]);
-          newCoords.push({ lat, lng });
-        } else {
-          // For bulk: format is lat,lng
-          newCoords.push({ lat: parts[0], lng: parts[1] });
-        }
-      }
+    if (result.valid.length === 0) {
+      toast.error(`No valid coordinates found. ${result.errors.length} errors.`);
+      return;
     }
     
-    if (newCoords.length > 0) {
-      setCurrentCoords(prev => [...prev, ...newCoords]);
-      setBulkCoords('');
-      toast.success(`Added ${newCoords.length} coordinates`);
+    const newCoords: Coordinate[] = result.valid.map(c => ({ lat: c.lat, lng: c.lng }));
+    setCurrentCoords(prev => [...prev, ...newCoords]);
+    setBulkCoords('');
+    
+    if (result.errors.length > 0) {
+      toast.warning(
+        `Added ${result.valid.length} coordinates. ${result.errors.length} rows skipped.`
+      );
     } else {
-      toast.error('No valid coordinates found');
+      toast.success(`Added ${result.valid.length} coordinates successfully`);
     }
-  };
+  }, [bulkCoords, coordType]);
 
   const plotPolygon = () => {
     if (currentCoords.length < 3) {
@@ -407,67 +524,160 @@ const ManualPlotter = () => {
               <Input value={polygonName} onChange={e => setPolygonName(e.target.value)} placeholder="Enter name" />
             </div>
 
-            {/* Coordinate Type Selection */}
-            <div>
-              <Label>Coordinate System</Label>
-              <RadioGroup value={coordType} onValueChange={(v) => setCoordType(v as CoordType)} className="mt-2">
+            {/* Coordinate System Selection */}
+            <div className="bg-background/50 rounded-lg p-3">
+              <Label className="text-sm font-medium">Coordinate System</Label>
+              <RadioGroup 
+                value={coordType} 
+                onValueChange={(v) => setCoordType(v as CoordType)} 
+                className="mt-2 flex gap-4"
+              >
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="latLng" id="manual-latLng" />
-                  <Label htmlFor="manual-latLng" className="text-sm">Lat/Lng (WGS84)</Label>
+                  <Label htmlFor="manual-latLng" className="text-sm font-normal cursor-pointer">Lat/Lng (WGS84)</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="eastingNorthing" id="manual-eastingNorthing" />
-                  <Label htmlFor="manual-eastingNorthing" className="text-sm">Easting/Northing (UTM)</Label>
+                  <Label htmlFor="manual-eastingNorthing" className="text-sm font-normal cursor-pointer">Easting/Northing (UTM)</Label>
                 </div>
               </RadioGroup>
             </div>
 
-            <div>
-              <Label>Add Coordinate</Label>
-              <div className="flex gap-2">
-                <Input 
-                  placeholder={coordType === 'eastingNorthing' ? 'Northing' : 'Latitude'} 
-                  value={latInput} 
-                  onChange={e => setLatInput(e.target.value)} 
-                />
-                <Input 
-                  placeholder={coordType === 'eastingNorthing' ? 'Easting' : 'Longitude'} 
-                  value={lngInput} 
-                  onChange={e => setLngInput(e.target.value)} 
-                />
-                <Button size="icon" onClick={addCoordinate}><Plus className="w-4 h-4" /></Button>
-              </div>
-            </div>
-
-            <div>
-              <Label>{coordType === 'eastingNorthing' ? 'Bulk Coordinates (easting,northing per line)' : 'Bulk Coordinates (lat,lng per line)'}</Label>
-              <Textarea 
-                value={bulkCoords} 
-                onChange={e => setBulkCoords(e.target.value)}
-                placeholder={coordType === 'eastingNorthing' ? '500000,6000000\n500100,6000100' : '51.505,-0.09\n51.51,-0.1'}
-                className="font-mono text-sm"
-              />
-              <Button onClick={addBulkCoordinates} size="sm" className="mt-2">Add Multiple</Button>
-            </div>
+            {/* Input Mode Tabs */}
+            <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as InputMode)} className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="single">Single Point</TabsTrigger>
+                <TabsTrigger value="bulk">Bulk Input</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="single" className="space-y-3 mt-3">
+                <div>
+                  <Label>Add Single Coordinate</Label>
+                  <div className="flex gap-2 mt-1">
+                    <Input 
+                      placeholder={coordType === 'eastingNorthing' ? 'Northing' : 'Latitude'} 
+                      value={latInput} 
+                      onChange={e => setLatInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && addCoordinate()}
+                    />
+                    <Input 
+                      placeholder={coordType === 'eastingNorthing' ? 'Easting' : 'Longitude'} 
+                      value={lngInput} 
+                      onChange={e => setLngInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && addCoordinate()}
+                    />
+                    <Button size="icon" onClick={addCoordinate}><Plus className="w-4 h-4" /></Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Or click directly on the map to add points
+                  </p>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="bulk" className="space-y-3 mt-3">
+                <div>
+                  <Label>Paste Multiple Coordinates</Label>
+                  <Textarea 
+                    value={bulkCoords} 
+                    onChange={e => setBulkCoords(e.target.value)}
+                    placeholder={
+                      coordType === 'eastingNorthing' 
+                        ? '500000, 6000000\n500100 6000100\n500200,6000200' 
+                        : '7.4321, 3.9123\n7.4410 3.9201\n7.4502,3.9350'
+                    }
+                    className="font-mono text-sm h-28"
+                  />
+                  <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                    <p>Supported formats: <code>lat, lng</code> • <code>lat lng</code> • <code>lat,lng</code></p>
+                    <p>One coordinate pair per line</p>
+                  </div>
+                </div>
+                
+                {/* Bulk Preview & Validation */}
+                {bulkPreview && (
+                  <div className="rounded-lg border border-border p-3 space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Parse Preview</span>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="flex items-center gap-1.5 text-green-600">
+                        <CheckCircle className="w-4 h-4" />
+                        <span>{bulkPreview.valid.length} valid</span>
+                      </div>
+                      {bulkPreview.errors.length > 0 && (
+                        <div className="flex items-center gap-1.5 text-amber-600">
+                          <AlertCircle className="w-4 h-4" />
+                          <span>{bulkPreview.errors.length} errors</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {bulkPreview.errors.length > 0 && (
+                      <div className="bg-amber-50 dark:bg-amber-950/30 rounded p-2 text-xs max-h-24 overflow-y-auto">
+                        <p className="font-medium text-amber-700 dark:text-amber-400 mb-1">Errors (will be skipped):</p>
+                        {bulkPreview.errors.slice(0, 5).map((err, i) => (
+                          <div key={i} className="text-amber-600 dark:text-amber-500">
+                            Line {err.lineNumber}: {err.reason}
+                          </div>
+                        ))}
+                        {bulkPreview.errors.length > 5 && (
+                          <div className="text-amber-500">...and {bulkPreview.errors.length - 5} more</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                <Button 
+                  onClick={addBulkCoordinates} 
+                  className="w-full bg-forest-light hover:bg-forest-mid"
+                  disabled={!bulkPreview || bulkPreview.valid.length === 0}
+                >
+                  Add {bulkPreview?.valid.length || 0} Coordinates
+                </Button>
+              </TabsContent>
+            </Tabs>
 
             <div className="flex gap-2 flex-wrap">
-              <Button onClick={plotPolygon} className="bg-forest-light hover:bg-forest-mid">Plot Polygon</Button>
-              <Button onClick={clearAll} variant="destructive">Clear All</Button>
+              <Button onClick={plotPolygon} className="bg-forest-light hover:bg-forest-mid" disabled={currentCoords.length < 3}>
+                Plot Polygon ({currentCoords.length} pts)
+              </Button>
+              <Button onClick={() => setCurrentCoords([])} variant="outline" disabled={currentCoords.length === 0}>
+                Clear Points
+              </Button>
             </div>
             
             <div className="flex gap-2">
               <Button onClick={undo} variant="outline" size="sm"><RotateCcw className="w-4 h-4 mr-1" /> Undo</Button>
               <Button onClick={redo} variant="outline" size="sm"><RotateCw className="w-4 h-4 mr-1" /> Redo</Button>
+              <Button onClick={clearAll} variant="destructive" size="sm" className="ml-auto">Clear All</Button>
             </div>
 
             {/* Current Coordinates */}
-            <div className="bg-background rounded p-3 max-h-32 overflow-y-auto font-mono text-xs">
+            <div className="bg-background rounded p-3 max-h-40 overflow-y-auto">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium">Current Points ({currentCoords.length})</span>
+              </div>
               {currentCoords.length === 0 ? (
-                <p className="text-muted-foreground">Click on map or add coordinates manually</p>
+                <p className="text-muted-foreground text-sm">
+                  {inputMode === 'single' ? 'Click on map or enter coordinates above' : 'Paste coordinates above and click Add'}
+                </p>
               ) : (
-                currentCoords.map((c, i) => (
-                  <div key={i}>{i + 1}. {c.lat.toFixed(6)}, {c.lng.toFixed(6)}</div>
-                ))
+                <div className="font-mono text-xs space-y-0.5">
+                  {currentCoords.map((c, i) => (
+                    <div key={i} className="flex justify-between items-center hover:bg-muted/50 rounded px-1">
+                      <span>{i + 1}. {c.lat.toFixed(6)}, {c.lng.toFixed(6)}</span>
+                      <Button 
+                        size="icon" 
+                        variant="ghost" 
+                        className="h-5 w-5 text-muted-foreground hover:text-destructive"
+                        onClick={() => setCurrentCoords(prev => prev.filter((_, idx) => idx !== i))}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
