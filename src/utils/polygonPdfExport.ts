@@ -382,40 +382,40 @@ export async function exportPolygonPdf(
   
   // === HEADER SECTION ===
   pdf.setFillColor(COLORS.primary[0], COLORS.primary[1], COLORS.primary[2]);
-  pdf.rect(0, 0, PAGE.width, 14, 'F');
+  pdf.rect(0, 0, PAGE.width, 12, 'F');
   
   pdf.setTextColor(255, 255, 255);
-  pdf.setFontSize(11);
+  pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('Polygon Map Report', margin, 9);
+  pdf.text('Polygon Map Report', margin, 8);
   
-  pdf.setFontSize(7);
+  pdf.setFontSize(6);
   pdf.setFont('helvetica', 'normal');
   const dateStr = new Date().toLocaleDateString('en-US', { 
     year: 'numeric', month: 'short', day: 'numeric' 
   });
-  pdf.text(dateStr, PAGE.width - margin - 20, 9);
+  pdf.text(dateStr, PAGE.width - margin - 18, 8);
   
-  y = 20;
+  y = 16;
   
-  // === TITLE & METADATA ROW ===
-  pdf.setFontSize(14);
+  // === TITLE ROW ===
+  pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(COLORS.textDark[0], COLORS.textDark[1], COLORS.textDark[2]);
   pdf.text(polygon.name, margin, y);
   
-  y += 5;
-  pdf.setFontSize(8);
+  y += 4;
+  pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(COLORS.textMuted[0], COLORS.textMuted[1], COLORS.textMuted[2]);
   const landUseLabel = LAND_USE_CATEGORIES.find(c => c.value === polygon.landUse)?.label || polygon.landUse;
-  pdf.text(`Land Use: ${landUseLabel}  •  Source: ${config.dataSource}  •  CRS: WGS 84 (EPSG:4326)`, margin, y);
+  pdf.text(`Land Use: ${landUseLabel}  •  Source: ${config.dataSource}  •  CRS: WGS 84`, margin, y);
   
-  y += 6;
+  y += 5;
   
-  // === MAP SECTION (60-65% of width) ===
-  const mapWidth = contentWidth * 0.62;
-  const mapHeight = 95; // Fixed height for consistent layout
+  // === MAP SECTION (Full width, ~55% of page height) ===
+  const mapWidth = contentWidth;
+  const mapHeight = 130; // Larger map taking more vertical space
   const mapX = margin;
   const mapY = y;
   
@@ -448,40 +448,65 @@ export async function exportPolygonPdf(
     try {
       pdf.addImage(mapImage, 'PNG', mapX + 0.5, mapY + 0.5, mapWidth - 1, mapHeight - 1);
     } catch {
-      drawPolygon(pdf, polygon.coordinates, mapX + 5, mapY + 5, mapWidth - 10, mapHeight - 10, extent);
+      drawPolygon(pdf, polygon.coordinates, mapX + 8, mapY + 8, mapWidth - 16, mapHeight - 16, extent);
     }
   } else {
-    drawPolygon(pdf, polygon.coordinates, mapX + 5, mapY + 5, mapWidth - 10, mapHeight - 10, extent);
+    drawPolygon(pdf, polygon.coordinates, mapX + 8, mapY + 8, mapWidth - 16, mapHeight - 16, extent);
     drawCornerCoordinates(pdf, mapX, mapY, mapWidth, mapHeight, extent);
   }
   
   // Scale bar (bottom-left inside map)
   const scaleInfo = calculateScaleBar(extent, mapWidth);
-  drawScaleBar(pdf, mapX + 5, mapY + mapHeight - 12, scaleInfo);
+  drawScaleBar(pdf, mapX + 6, mapY + mapHeight - 14, scaleInfo);
   
   // North arrow (top-right inside map)
-  drawNorthArrow(pdf, mapX + mapWidth - 10, mapY + 10, 8);
+  drawNorthArrow(pdf, mapX + mapWidth - 12, mapY + 12, 9);
   
-  // === INFORMATION PANEL (Right side) ===
-  const panelX = mapX + mapWidth + 6;
-  const panelWidth = contentWidth - mapWidth - 6;
-  let panelY = mapY;
+  // Legend (bottom-right inside map)
+  const legendX = mapX + mapWidth - 28;
+  const legendY = mapY + mapHeight - 14;
   
-  // Metadata box
-  pdf.setFontSize(9);
+  pdf.setFillColor(255, 255, 255);
+  pdf.setGState(pdf.GState({ opacity: 0.9 }));
+  pdf.roundedRect(legendX - 2, legendY - 3, 28, 11, 1, 1, 'F');
+  pdf.setGState(pdf.GState({ opacity: 1 }));
+  
+  pdf.setFontSize(5.5);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(COLORS.textDark[0], COLORS.textDark[1], COLORS.textDark[2]);
+  pdf.text('Legend', legendX, legendY);
+  
+  pdf.setFillColor(COLORS.polygonFill[0], COLORS.polygonFill[1], COLORS.polygonFill[2]);
+  pdf.setGState(pdf.GState({ opacity: 0.3 }));
+  pdf.rect(legendX, legendY + 2, 6, 3, 'F');
+  pdf.setGState(pdf.GState({ opacity: 1 }));
+  pdf.setDrawColor(COLORS.polygonStroke[0], COLORS.polygonStroke[1], COLORS.polygonStroke[2]);
+  pdf.setLineWidth(0.4);
+  pdf.rect(legendX, legendY + 2, 6, 3, 'S');
+  
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(5);
+  pdf.text('Polygon', legendX + 8, legendY + 4.5);
+  
+  y = mapY + mapHeight + 5;
+  
+  // === INFORMATION PANEL (Below map, 3-column layout) ===
+  const colWidth = contentWidth / 3;
+  
+  // Column 1: Spatial Metrics
+  let col1Y = y;
+  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(COLORS.primary[0], COLORS.primary[1], COLORS.primary[2]);
-  pdf.text('Spatial Metrics', panelX, panelY + 4);
+  pdf.text('Spatial Metrics', margin, col1Y);
   
-  panelY += 8;
+  col1Y += 4;
   
   const edges = calculateEdgeLengths(polygon.coordinates);
   const perimeter = calculatePerimeter(edges);
   const dimensions = calculateDimensions(polygon.coordinates);
   const areaVal = convertArea(polygon.area, config.areaUnit);
   
-  // Metrics in compact format
-  pdf.setFontSize(7);
   const metrics = [
     { label: 'Area', value: `${areaVal.toFixed(4)} ${getUnitLabel(config.areaUnit)}` },
     { label: 'Perimeter', value: formatDistanceCompact(perimeter) },
@@ -490,179 +515,132 @@ export async function exportPolygonPdf(
     { label: 'Vertices', value: `${polygon.coordinates.length}` },
   ];
   
+  pdf.setFontSize(6);
   metrics.forEach((m, i) => {
-    const rowY = panelY + i * 7;
+    const rowY = col1Y + i * 5;
     
     if (i % 2 === 0) {
       pdf.setFillColor(COLORS.tableHeader[0], COLORS.tableHeader[1], COLORS.tableHeader[2]);
-      pdf.rect(panelX, rowY - 2, panelWidth, 7, 'F');
+      pdf.rect(margin, rowY, colWidth - 3, 5, 'F');
     }
     
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(COLORS.textDark[0], COLORS.textDark[1], COLORS.textDark[2]);
-    pdf.text(m.label, panelX + 1, rowY + 2);
+    pdf.text(m.label, margin + 1, rowY + 3.5);
     
     pdf.setFont('helvetica', 'normal');
-    pdf.text(m.value, panelX + panelWidth - 2, rowY + 2, { align: 'right' });
+    pdf.text(m.value, margin + colWidth - 5, rowY + 3.5, { align: 'right' });
   });
   
-  panelY += metrics.length * 7 + 4;
+  // Column 2: Edge Distances
+  let col2Y = y;
+  const col2X = margin + colWidth;
   
-  // Edge lengths summary (compact)
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(COLORS.primary[0], COLORS.primary[1], COLORS.primary[2]);
-  pdf.text('Edge Distances', panelX, panelY + 2);
+  pdf.text('Edge Distances', col2X, col2Y);
   
-  panelY += 6;
+  col2Y += 4;
   pdf.setFontSize(5.5);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(COLORS.textDark[0], COLORS.textDark[1], COLORS.textDark[2]);
   
-  const maxEdges = Math.min(edges.length, 6);
+  const maxEdges = Math.min(edges.length, 8);
   for (let i = 0; i < maxEdges; i++) {
     const next = (i + 1) % polygon.coordinates.length;
-    pdf.text(`${i + 1}→${next + 1}: ${formatDistanceCompact(edges[i])}`, panelX + 1, panelY + i * 4);
+    const rowY = col2Y + i * 4;
+    
+    if (i % 2 === 0) {
+      pdf.setFillColor(COLORS.tableAlt[0], COLORS.tableAlt[1], COLORS.tableAlt[2]);
+      pdf.rect(col2X, rowY - 0.5, colWidth - 3, 4, 'F');
+    }
+    
+    pdf.text(`${i + 1} → ${next + 1}`, col2X + 1, rowY + 2.5);
+    pdf.text(formatDistanceCompact(edges[i]), col2X + colWidth - 6, rowY + 2.5, { align: 'right' });
   }
   
   if (edges.length > maxEdges) {
     pdf.setTextColor(COLORS.textMuted[0], COLORS.textMuted[1], COLORS.textMuted[2]);
-    pdf.text(`+${edges.length - maxEdges} more edges`, panelX + 1, panelY + maxEdges * 4);
+    pdf.text(`+${edges.length - maxEdges} more`, col2X + 1, col2Y + maxEdges * 4 + 2);
   }
   
-  // Legend (below metrics panel)
-  panelY = mapY + mapHeight - 18;
+  // Column 3: Coordinates (compact)
+  let col3Y = y;
+  const col3X = margin + colWidth * 2;
   
-  pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(COLORS.textDark[0], COLORS.textDark[1], COLORS.textDark[2]);
-  pdf.text('Legend', panelX, panelY);
-  
-  panelY += 4;
-  pdf.setFillColor(COLORS.polygonFill[0], COLORS.polygonFill[1], COLORS.polygonFill[2]);
-  pdf.setGState(pdf.GState({ opacity: 0.3 }));
-  pdf.rect(panelX, panelY, 8, 4, 'F');
-  pdf.setGState(pdf.GState({ opacity: 1 }));
-  pdf.setDrawColor(COLORS.polygonStroke[0], COLORS.polygonStroke[1], COLORS.polygonStroke[2]);
-  pdf.setLineWidth(0.4);
-  pdf.rect(panelX, panelY, 8, 4, 'S');
-  
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(6);
-  pdf.text('Polygon', panelX + 10, panelY + 3);
-  
-  y = mapY + mapHeight + 6;
-  
-  // === COORDINATES TABLE (Full width, compact) ===
-  pdf.setFontSize(9);
+  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(COLORS.primary[0], COLORS.primary[1], COLORS.primary[2]);
-  pdf.text('Vertex Coordinates', margin, y);
+  pdf.text('Vertex Coordinates', col3X, col3Y);
   
-  y += 4;
-  
-  // Table header
-  pdf.setFillColor(COLORS.tableHeader[0], COLORS.tableHeader[1], COLORS.tableHeader[2]);
-  pdf.rect(margin, y, contentWidth, 5, 'F');
-  
-  pdf.setFontSize(6);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(COLORS.textDark[0], COLORS.textDark[1], COLORS.textDark[2]);
-  
-  const colCount = 4; // 4 columns of coordinates
-  const colWidth = contentWidth / colCount;
-  
-  for (let c = 0; c < colCount; c++) {
-    pdf.text('Pt', margin + c * colWidth + 1, y + 3.5);
-    pdf.text('Latitude', margin + c * colWidth + 8, y + 3.5);
-    pdf.text('Longitude', margin + c * colWidth + 28, y + 3.5);
-  }
-  
-  y += 5;
-  
-  // Coordinates in columns
+  col3Y += 4;
+  pdf.setFontSize(5);
   pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(5.5);
   
-  const maxCoords = Math.min(polygon.coordinates.length, 20);
-  const rowsPerCol = Math.ceil(maxCoords / colCount);
-  
-  for (let row = 0; row < rowsPerCol; row++) {
-    const rowY = y + row * 4;
+  const maxCoords = Math.min(polygon.coordinates.length, 10);
+  for (let i = 0; i < maxCoords; i++) {
+    const coord = polygon.coordinates[i];
+    const rowY = col3Y + i * 3.5;
     
-    if (row % 2 === 0) {
+    if (i % 2 === 0) {
       pdf.setFillColor(COLORS.tableAlt[0], COLORS.tableAlt[1], COLORS.tableAlt[2]);
-      pdf.rect(margin, rowY, contentWidth, 4, 'F');
+      pdf.rect(col3X, rowY - 0.5, colWidth - 3, 3.5, 'F');
     }
     
-    pdf.setDrawColor(COLORS.tableBorder[0], COLORS.tableBorder[1], COLORS.tableBorder[2]);
-    pdf.setLineWidth(0.1);
-    pdf.rect(margin, rowY, contentWidth, 4, 'S');
-    
-    for (let col = 0; col < colCount; col++) {
-      const idx = col * rowsPerCol + row;
-      if (idx < maxCoords) {
-        const coord = polygon.coordinates[idx];
-        pdf.setTextColor(COLORS.textMuted[0], COLORS.textMuted[1], COLORS.textMuted[2]);
-        pdf.text(`${idx + 1}`, margin + col * colWidth + 2, rowY + 3);
-        pdf.setTextColor(COLORS.textDark[0], COLORS.textDark[1], COLORS.textDark[2]);
-        pdf.text(coord.lat.toFixed(6), margin + col * colWidth + 8, rowY + 3);
-        pdf.text(coord.lng.toFixed(6), margin + col * colWidth + 28, rowY + 3);
-      }
-    }
+    pdf.setTextColor(COLORS.textMuted[0], COLORS.textMuted[1], COLORS.textMuted[2]);
+    pdf.text(`${i + 1}`, col3X + 1, rowY + 2);
+    pdf.setTextColor(COLORS.textDark[0], COLORS.textDark[1], COLORS.textDark[2]);
+    pdf.text(`${coord.lat.toFixed(5)}, ${coord.lng.toFixed(5)}`, col3X + 6, rowY + 2);
   }
-  
-  y += rowsPerCol * 4 + 2;
   
   if (polygon.coordinates.length > maxCoords) {
-    pdf.setFontSize(5.5);
     pdf.setTextColor(COLORS.textMuted[0], COLORS.textMuted[1], COLORS.textMuted[2]);
-    pdf.text(`... and ${polygon.coordinates.length - maxCoords} additional vertices`, margin + 2, y);
-    y += 4;
+    pdf.text(`+${polygon.coordinates.length - maxCoords} more`, col3X + 1, col3Y + maxCoords * 3.5 + 2);
   }
   
   // Self-intersection warning
   const hasSelfIntersection = checkSelfIntersection(polygon.coordinates);
   if (hasSelfIntersection) {
-    y += 2;
+    y = Math.max(col1Y + metrics.length * 5, col2Y + maxEdges * 4, col3Y + maxCoords * 3.5) + 6;
+    
     pdf.setFillColor(255, 245, 245);
     pdf.setDrawColor(200, 80, 80);
     pdf.setLineWidth(0.3);
-    pdf.roundedRect(margin, y, contentWidth, 6, 1, 1, 'FD');
+    pdf.roundedRect(margin, y, contentWidth, 5, 1, 1, 'FD');
     
-    pdf.setFontSize(6);
+    pdf.setFontSize(5.5);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(180, 50, 50);
-    pdf.text('⚠ Warning: Self-intersecting polygon detected. Area calculations may be inaccurate.', margin + 3, y + 4);
-    y += 8;
+    pdf.text('⚠ Warning: Self-intersecting polygon detected. Area calculations may be inaccurate.', margin + 2, y + 3.5);
   }
   
   // === DISCLAIMER FOOTER ===
-  const disclaimerY = PAGE.height - margin - 12;
+  const disclaimerY = PAGE.height - margin - 10;
   
   pdf.setFillColor(COLORS.disclaimer[0], COLORS.disclaimer[1], COLORS.disclaimer[2]);
-  pdf.rect(margin, disclaimerY, contentWidth, 10, 'F');
+  pdf.rect(margin, disclaimerY, contentWidth, 8, 'F');
   
-  pdf.setFontSize(5.5);
+  pdf.setFontSize(5);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(COLORS.textMuted[0], COLORS.textMuted[1], COLORS.textMuted[2]);
   pdf.text(
     'Disclaimer: Accuracy depends on coordinate precision and projection assumptions. This output is for planning and visualization purposes only.',
-    margin + 2, disclaimerY + 4
+    margin + 2, disclaimerY + 3
   );
   pdf.text(
     'It should not replace official cadastral surveys or legal boundary documentation.',
-    margin + 2, disclaimerY + 8
+    margin + 2, disclaimerY + 6.5
   );
   
   // Footer line
   pdf.setDrawColor(COLORS.tableBorder[0], COLORS.tableBorder[1], COLORS.tableBorder[2]);
   pdf.setLineWidth(0.2);
-  pdf.line(margin, PAGE.height - 6, PAGE.width - margin, PAGE.height - 6);
+  pdf.line(margin, PAGE.height - 5, PAGE.width - margin, PAGE.height - 5);
   
-  pdf.setFontSize(5);
-  pdf.text('Generated by RessComm Plotter', margin, PAGE.height - 3);
-  pdf.text(new Date().toLocaleString(), PAGE.width - margin, PAGE.height - 3, { align: 'right' });
+  pdf.setFontSize(4.5);
+  pdf.text('Generated by RessComm Plotter', margin, PAGE.height - 2);
+  pdf.text(new Date().toLocaleString(), PAGE.width - margin, PAGE.height - 2, { align: 'right' });
   
   // Generate filename
   const fileDateStr = new Date().toISOString().slice(0, 10);
