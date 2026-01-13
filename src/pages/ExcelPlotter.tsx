@@ -15,6 +15,8 @@ import * as XLSX from 'xlsx';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { exportMultiplePolygonsPdf, LAND_USE_CATEGORIES, type AreaUnit, type PolygonData } from '@/utils/polygonPdfExport';
 import { eastingNorthingToLatLng, isProjectedCoordinate } from '@/utils/coordinateUtils';
+import { BasemapSelector } from '@/components/BasemapSelector';
+import { getBasemapById, DEFAULT_BASEMAP } from '@/utils/basemapConfig';
 import 'leaflet/dist/leaflet.css';
 
 type CoordType = 'latLng' | 'eastingNorthing';
@@ -98,6 +100,10 @@ const ExcelPlotter = () => {
   const [redoStack, setRedoStack] = useState<PlottedArea[][]>([]);
   const [fileStatus, setFileStatus] = useState<string>('No file uploaded yet');
   const [plotStatus, setPlotStatus] = useState<string>('Ready to plot');
+  
+  // Basemap state
+  const [basemapId, setBasemapId] = useState(DEFAULT_BASEMAP);
+  const currentBasemap = getBasemapById(basemapId);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -555,11 +561,16 @@ const ExcelPlotter = () => {
         </div>
 
         {/* Map */}
-        <div className="flex-1">
+        <div className="flex-1 relative">
+          <div className="absolute top-3 right-3 z-[1000]">
+            <BasemapSelector value={basemapId} onChange={setBasemapId} compact />
+          </div>
           <MapContainer center={[9.06, 7.49]} zoom={6} style={{ height: '100%', width: '100%' }}>
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              key={basemapId}
+              attribution={currentBasemap.attribution}
+              url={currentBasemap.url}
+              maxZoom={currentBasemap.maxZoom}
             />
             <FitBounds areas={plottedAreas} />
 

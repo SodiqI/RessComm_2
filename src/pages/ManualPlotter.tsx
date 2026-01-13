@@ -13,10 +13,12 @@ import { toast } from 'sonner';
 import { Plus, Trash2, Download, RotateCcw, RotateCw, Eye, Home, FileSpreadsheet, Layers, AlertCircle, CheckCircle, FileText } from 'lucide-react';
 import JSZip from 'jszip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
-import { exportPolygonPdf, exportMultiplePolygonsPdf, LAND_USE_CATEGORIES, type AreaUnit, type PolygonData } from '@/utils/polygonPdfExport';
+import { exportPolygonPdf, exportMultiplePolygonsPdf, LAND_USE_CATEGORIES, type AreaUnit, type PolygonData, type PdfOrientation } from '@/utils/polygonPdfExport';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import { eastingNorthingToLatLng } from '@/utils/coordinateUtils';
+import { BasemapSelector } from '@/components/BasemapSelector';
+import { getBasemapById, DEFAULT_BASEMAP } from '@/utils/basemapConfig';
 import 'leaflet/dist/leaflet.css';
 
 type CoordType = 'latLng' | 'eastingNorthing';
@@ -218,7 +220,12 @@ const ManualPlotter = () => {
   const [pdfAreaUnit, setPdfAreaUnit] = useState<AreaUnit>('hectares');
   const [pdfExportType, setPdfExportType] = useState<'single' | 'all'>('single');
   const [pdfSelectedPolygon, setPdfSelectedPolygon] = useState<number | null>(null);
+  const [pdfOrientation, setPdfOrientation] = useState<PdfOrientation>('auto');
   const [isExporting, setIsExporting] = useState(false);
+  
+  // Basemap state
+  const [basemapId, setBasemapId] = useState(DEFAULT_BASEMAP);
+  const currentBasemap = getBasemapById(basemapId);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mapRef = useRef<HTMLDivElement>(null);
@@ -500,6 +507,8 @@ const ManualPlotter = () => {
           polygons: [polygonData],
           dataSource: 'Manual Plotter',
           mapElement: mapRef.current,
+          orientation: pdfOrientation,
+          basemapId: basemapId,
         });
         
         toast.success('PDF exported successfully');
@@ -532,6 +541,8 @@ const ManualPlotter = () => {
           areaUnit: pdfAreaUnit,
           polygons: polygonDataList,
           dataSource: 'Manual Plotter',
+          orientation: pdfOrientation,
+          basemapId: basemapId,
         });
         
         toast.success('PDF report exported successfully');
@@ -903,6 +914,17 @@ const ManualPlotter = () => {
                         </SelectContent>
                       </Select>
                     </div>
+                    <div>
+                      <Label>Page Orientation</Label>
+                      <Select value={pdfOrientation} onValueChange={(v) => setPdfOrientation(v as PdfOrientation)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Auto (based on shape)</SelectItem>
+                          <SelectItem value="portrait">Portrait</SelectItem>
+                          <SelectItem value="landscape">Landscape</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setPdfExportOpen(false)}>Cancel</Button>
@@ -929,11 +951,16 @@ const ManualPlotter = () => {
         </div>
 
         {/* Map */}
-        <div className="flex-1" ref={mapRef}>
+        <div className="flex-1 relative" ref={mapRef}>
+          <div className="absolute top-3 right-3 z-[1000]">
+            <BasemapSelector value={basemapId} onChange={setBasemapId} compact />
+          </div>
           <MapContainer center={[9.06, 7.49]} zoom={6} style={{ height: '100%', width: '100%' }}>
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              key={basemapId}
+              attribution={currentBasemap.attribution}
+              url={currentBasemap.url}
+              maxZoom={currentBasemap.maxZoom}
             />
             <MapClickHandler onMapClick={handleMapClick} />
             <FitBounds polygons={polygons} />

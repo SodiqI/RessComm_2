@@ -1,8 +1,11 @@
-import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, useRef, forwardRef, useImperativeHandle, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { DataPoint, GridCell, AnalysisResults, LayerVisibility, ColorScheme } from '@/types/spatial';
 import { getColorForValue, getColorForClass, getReliabilityColor, getGradientCSS } from '@/utils/colorSchemes';
+import { BASEMAP_OPTIONS, DEFAULT_BASEMAP, getBasemapById } from '@/utils/basemapConfig';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Map } from 'lucide-react';
 
 interface SpatialMapProps {
   dataPoints: DataPoint[];
@@ -17,6 +20,8 @@ export const SpatialMap = forwardRef<HTMLDivElement, SpatialMapProps>(
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const layersRef = useRef<Record<string, L.LayerGroup>>({});
+    const tileLayerRef = useRef<L.TileLayer | null>(null);
+    const [basemapId, setBasemapId] = useState(DEFAULT_BASEMAP);
 
     useImperativeHandle(ref, () => mapContainerRef.current!);
 
@@ -30,9 +35,11 @@ export const SpatialMap = forwardRef<HTMLDivElement, SpatialMapProps>(
         zoomControl: false
       });
 
-      // Add tile layer
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
+      // Add initial tile layer
+      const basemap = getBasemapById(basemapId);
+      tileLayerRef.current = L.tileLayer(basemap.url, {
+        attribution: basemap.attribution,
+        maxZoom: basemap.maxZoom || 19
       }).addTo(map);
 
       // Add zoom control to top-right
@@ -45,6 +52,25 @@ export const SpatialMap = forwardRef<HTMLDivElement, SpatialMapProps>(
         mapRef.current = null;
       };
     }, []);
+    
+    // Update basemap when selection changes
+    useEffect(() => {
+      if (!mapRef.current) return;
+      
+      const basemap = getBasemapById(basemapId);
+      
+      if (tileLayerRef.current) {
+        mapRef.current.removeLayer(tileLayerRef.current);
+      }
+      
+      tileLayerRef.current = L.tileLayer(basemap.url, {
+        attribution: basemap.attribution,
+        maxZoom: basemap.maxZoom || 19
+      }).addTo(mapRef.current);
+      
+      // Move tile layer to back
+      tileLayerRef.current.bringToBack();
+    }, [basemapId]);
 
     // Update data points layer
     useEffect(() => {
@@ -414,6 +440,23 @@ export const SpatialMap = forwardRef<HTMLDivElement, SpatialMapProps>(
             </p>
           </div>
         )}
+
+        {/* Basemap Selector */}
+        <div className="absolute top-4 right-14 z-[1000]">
+          <Select value={basemapId} onValueChange={setBasemapId}>
+            <SelectTrigger className="h-8 text-xs w-[160px] bg-card border-border shadow-md">
+              <Map className="w-3 h-3 mr-1" />
+              <SelectValue placeholder="Basemap" />
+            </SelectTrigger>
+            <SelectContent>
+              {BASEMAP_OPTIONS.map((basemap) => (
+                <SelectItem key={basemap.id} value={basemap.id} className="text-xs">
+                  {basemap.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         {/* Coordinates display */}
         <div className="absolute top-4 left-4 z-[1000] bg-card px-3 py-2 rounded-lg shadow-md border border-border text-xs text-muted-foreground">
