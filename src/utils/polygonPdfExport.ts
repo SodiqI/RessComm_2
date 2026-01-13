@@ -1,6 +1,7 @@
 // PDF Export utilities for Manual and Excel Plotter - Single-page polygon reports
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { getPlainTextAttribution } from './basemapConfig';
 
 // Types
 export interface PolygonPoint {
@@ -20,12 +21,15 @@ export interface PolygonData {
 }
 
 export type AreaUnit = 'hectares' | 'acres' | 'sqMeters';
+export type PdfOrientation = 'portrait' | 'landscape' | 'auto';
 
 export interface PdfExportConfig {
   areaUnit: AreaUnit;
   polygons: PolygonData[];
   dataSource: 'Manual Plotter' | 'Excel Upload';
   mapElement?: HTMLElement | null;
+  orientation?: PdfOrientation;
+  basemapId?: string;
 }
 
 // Land use categories
@@ -56,9 +60,15 @@ const COLORS = {
 };
 
 // A4 dimensions in mm
-const PAGE = {
+const PAGE_PORTRAIT = {
   width: 210,
   height: 297,
+  margin: 15,
+};
+
+const PAGE_LANDSCAPE = {
+  width: 297,
+  height: 210,
   margin: 15,
 };
 
@@ -131,6 +141,23 @@ function calculateExtent(coords: PolygonPoint[], bufferPercent: number = 0.08): 
     centerLat: (minLat + maxLat) / 2,
     centerLng: (minLng + maxLng) / 2,
   };
+}
+
+// Determine optimal orientation based on polygon aspect ratio
+function determineOptimalOrientation(coords: PolygonPoint[]): 'portrait' | 'landscape' {
+  const lats = coords.map(c => c.lat);
+  const lngs = coords.map(c => c.lng);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  
+  const centerLat = (minLat + maxLat) / 2;
+  const latSpan = calculateDistance(minLat, (minLng + maxLng) / 2, maxLat, (minLng + maxLng) / 2);
+  const lngSpan = calculateDistance(centerLat, minLng, centerLat, maxLng);
+  
+  // If width > height by significant margin, use landscape
+  return lngSpan > latSpan * 1.2 ? 'landscape' : 'portrait';
 }
 
 // Calculate scale bar with smart sizing
@@ -360,6 +387,42 @@ function drawCornerCoordinates(
   pdf.text(`${formatCoord(extent.maxLng, false)}`, mapX + mapWidth - 14, mapY + mapHeight - 1);
 }
 
+// Enhanced map capture with better tile handling
+async function captureMapWithTiles(mapElement: HTMLElement): Promise<string | null> {
+  try {
+    // Wait for tiles to load
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Configure html2canvas with better tile handling
+    const canvas = await html2canvas(mapElement, {
+      useCORS: true,
+      allowTaint: true,
+      scale: 2, // Higher resolution
+      logging: false,
+      backgroundColor: '#ffffff',
+      imageTimeout: 15000, // Longer timeout for tiles
+      onclone: (clonedDoc) => {
+        // Ensure all images in the cloned document have crossorigin attribute
+        const images = clonedDoc.querySelectorAll('img');
+        images.forEach(img => {
+          img.crossOrigin = 'anonymous';
+        });
+        
+        // Hide any controls that shouldn't appear in PDF
+        const controls = clonedDoc.querySelectorAll('.leaflet-control-container');
+        controls.forEach(control => {
+          (control as HTMLElement).style.display = 'none';
+        });
+      }
+    });
+    
+    return canvas.toDataURL('image/png', 0.95);
+  } catch (error) {
+    console.warn('Map capture failed:', error);
+    return null;
+  }
+}
+
 // Main single-page export function
 export async function exportPolygonPdf(
   polygon: PolygonData,
@@ -370,8 +433,18 @@ export async function exportPolygonPdf(
     throw new Error('Polygon must have at least 3 points');
   }
   
+  // Determine orientation
+  let orientation: 'portrait' | 'landscape' = 'portrait';
+  if (config.orientation === 'auto') {
+    orientation = determineOptimalOrientation(polygon.coordinates);
+  } else if (config.orientation === 'landscape') {
+    orientation = 'landscape';
+  }
+  
+  const PAGE = orientation === 'landscape' ? PAGE_LANDSCAPE : PAGE_PORTRAIT;
+  
   const pdf = new jsPDF({
-    orientation: 'portrait',
+    orientation: orientation,
     unit: 'mm',
     format: 'a4',
   });
@@ -415,7 +488,7 @@ export async function exportPolygonPdf(
   
   // === MAP SECTION (Full width, ~55% of page height) ===
   const mapWidth = contentWidth;
-  const mapHeight = 130; // Larger map taking more vertical space
+  const mapHeight = orientation === 'landscape' ? 85 : 130; // Adjust for orientation
   const mapX = margin;
   const mapY = y;
   
@@ -428,20 +501,10 @@ export async function exportPolygonPdf(
   
   const extent = calculateExtent(polygon.coordinates);
   
-  // Try to capture map image
+  // Try to capture map image with improved tile handling
   let mapImage: string | null = null;
   if (mapElement) {
-    try {
-      const canvas = await html2canvas(mapElement, {
-        useCORS: true,
-        allowTaint: true,
-        scale: 2,
-        logging: false,
-      });
-      mapImage = canvas.toDataURL('image/png');
-    } catch {
-      console.warn('Could not capture map image');
-    }
+    mapImage = await captureMapWithTiles(mapElement);
   }
   
   if (mapImage) {
@@ -615,6 +678,17 @@ export async function exportPolygonPdf(
     pdf.text('⚠ Warning: Self-intersecting polygon detected. Area calculations may be inaccurate.', margin + 2, y + 3.5);
   }
   
+  // === BASEMAP ATTRIBUTION ===
+  if (config.basemapId) {
+    const attribution = getPlainTextAttribution(config.basemapId);
+    const attrY = PAGE.height - margin - 16;
+    
+    pdf.setFontSize(4.5);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(COLORS.textMuted[0], COLORS.textMuted[1], COLORS.textMuted[2]);
+    pdf.text(`Basemap: ${attribution}`, margin + 2, attrY);
+  }
+  
   // === DISCLAIMER FOOTER ===
   const disclaimerY = PAGE.height - margin - 10;
   
@@ -645,7 +719,7 @@ export async function exportPolygonPdf(
   // Generate filename
   const fileDateStr = new Date().toISOString().slice(0, 10);
   const safeName = polygon.name.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 25);
-  const filename = `${safeName}_PolygonReport_${fileDateStr}.pdf`;
+  const filename = `${safeName}_PolygonReport_${orientation}_${fileDateStr}.pdf`;
   
   pdf.save(filename);
 }
@@ -659,8 +733,19 @@ export async function exportMultiplePolygonsPdf(
     throw new Error('No polygons to export');
   }
   
+  // Determine orientation based on overall extent
+  let orientation: 'portrait' | 'landscape' = 'portrait';
+  if (config.orientation === 'auto') {
+    const allCoords = polygons.flatMap(p => p.coordinates);
+    orientation = determineOptimalOrientation(allCoords);
+  } else if (config.orientation === 'landscape') {
+    orientation = 'landscape';
+  }
+  
+  const PAGE = orientation === 'landscape' ? PAGE_LANDSCAPE : PAGE_PORTRAIT;
+  
   const pdf = new jsPDF({
-    orientation: 'portrait',
+    orientation: orientation,
     unit: 'mm',
     format: 'a4',
   });
@@ -695,9 +780,12 @@ export async function exportMultiplePolygonsPdf(
   
   y += 5;
   
-  // Table header
-  const colWidths = [55, 35, 20, 25, 35];
+  // Adjust column widths for orientation
+  const colWidths = orientation === 'landscape' 
+    ? [80, 45, 25, 35, 45]
+    : [55, 35, 20, 25, 35];
   
+  // Table header
   pdf.setFillColor(COLORS.tableHeader[0], COLORS.tableHeader[1], COLORS.tableHeader[2]);
   pdf.rect(margin, y, contentWidth, 6, 'F');
   
@@ -719,7 +807,9 @@ export async function exportMultiplePolygonsPdf(
   let totalArea = 0;
   let totalPerimeter = 0;
   
-  const maxRows = Math.min(polygons.length, 30);
+  const maxRows = orientation === 'landscape' 
+    ? Math.min(polygons.length, 20)
+    : Math.min(polygons.length, 30);
   
   for (let i = 0; i < maxRows; i++) {
     const p = polygons[i];
@@ -738,11 +828,11 @@ export async function exportMultiplePolygonsPdf(
     xPos = margin + 2;
     pdf.setTextColor(COLORS.textDark[0], COLORS.textDark[1], COLORS.textDark[2]);
     
-    pdf.text(p.name.slice(0, 28), xPos, y + 3.5);
+    pdf.text(p.name.slice(0, orientation === 'landscape' ? 40 : 28), xPos, y + 3.5);
     xPos += colWidths[0];
     
     const landUseLabel = LAND_USE_CATEGORIES.find(c => c.value === p.landUse)?.label || p.landUse;
-    pdf.text(landUseLabel.slice(0, 15), xPos, y + 3.5);
+    pdf.text(landUseLabel.slice(0, orientation === 'landscape' ? 20 : 15), xPos, y + 3.5);
     xPos += colWidths[1];
     
     pdf.text(`${p.coordinates.length}`, xPos, y + 3.5);
@@ -787,6 +877,17 @@ export async function exportMultiplePolygonsPdf(
   pdf.setTextColor(COLORS.textDark[0], COLORS.textDark[1], COLORS.textDark[2]);
   pdf.text('Coordinate Reference: WGS 84 (EPSG:4326) • Projection: Geographic (Lat/Lng)', margin, y);
   
+  // === BASEMAP ATTRIBUTION ===
+  if (config.basemapId) {
+    const attribution = getPlainTextAttribution(config.basemapId);
+    const attrY = PAGE.height - margin - 16;
+    
+    pdf.setFontSize(4.5);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(COLORS.textMuted[0], COLORS.textMuted[1], COLORS.textMuted[2]);
+    pdf.text(`Basemap: ${attribution}`, margin + 2, attrY);
+  }
+  
   // === DISCLAIMER ===
   const disclaimerY = PAGE.height - margin - 10;
   
@@ -816,7 +917,7 @@ export async function exportMultiplePolygonsPdf(
   
   // Generate filename
   const fileDateStr = new Date().toISOString().slice(0, 10);
-  const filename = `MultiPolygon_Report_${polygons.length}areas_${fileDateStr}.pdf`;
+  const filename = `MultiPolygon_Report_${polygons.length}areas_${orientation}_${fileDateStr}.pdf`;
   
   pdf.save(filename);
 }
