@@ -387,34 +387,119 @@ function drawCornerCoordinates(
   pdf.text(`${formatCoord(extent.maxLng, false)}`, mapX + mapWidth - 14, mapY + mapHeight - 1);
 }
 
-// Enhanced map capture with better tile handling
-async function captureMapWithTiles(mapElement: HTMLElement): Promise<string | null> {
-  try {
-    // Wait for tiles to load
-    await new Promise(resolve => setTimeout(resolve, 500));
+// Wait for map tiles to fully load
+async function waitForTilesToLoad(mapElement: HTMLElement, timeout: number = 3000): Promise<void> {
+  return new Promise((resolve) => {
+    const startTime = Date.now();
     
-    // Configure html2canvas with better tile handling
+    const checkTiles = () => {
+      const tiles = mapElement.querySelectorAll('.leaflet-tile');
+      const allLoaded = Array.from(tiles).every((tile) => {
+        const img = tile as HTMLImageElement;
+        return img.complete && img.naturalHeight !== 0;
+      });
+      
+      if (allLoaded || Date.now() - startTime > timeout) {
+        resolve();
+      } else {
+        requestAnimationFrame(checkTiles);
+      }
+    };
+    
+    checkTiles();
+  });
+}
+
+// Enhanced map capture with better tile handling and CORS proxy fallback
+export async function captureMapWithTiles(mapElement: HTMLElement): Promise<string | null> {
+  try {
+    // Wait for tiles to fully load
+    await waitForTilesToLoad(mapElement, 3000);
+    
+    // Additional wait for rendering
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    // Get all tile images and preload them with CORS
+    const tiles = mapElement.querySelectorAll('.leaflet-tile') as NodeListOf<HTMLImageElement>;
+    
+    // Create a promise to preload all tiles with CORS
+    const preloadPromises = Array.from(tiles).map((tile) => {
+      return new Promise<void>((resolve) => {
+        if (tile.complete) {
+          resolve();
+          return;
+        }
+        
+        const newImg = new Image();
+        newImg.crossOrigin = 'anonymous';
+        newImg.onload = () => resolve();
+        newImg.onerror = () => resolve(); // Continue even if one tile fails
+        newImg.src = tile.src;
+        
+        // Timeout fallback
+        setTimeout(() => resolve(), 2000);
+      });
+    });
+    
+    await Promise.all(preloadPromises);
+    
+    // Configure html2canvas with optimized settings for tile maps
     const canvas = await html2canvas(mapElement, {
       useCORS: true,
-      allowTaint: true,
-      scale: 2, // Higher resolution
+      allowTaint: false, // Stricter - prevents tainted canvas
+      scale: 2, // Higher resolution for print quality
       logging: false,
-      backgroundColor: '#ffffff',
-      imageTimeout: 15000, // Longer timeout for tiles
-      onclone: (clonedDoc) => {
-        // Ensure all images in the cloned document have crossorigin attribute
-        const images = clonedDoc.querySelectorAll('img');
-        images.forEach(img => {
+      backgroundColor: '#f8fafc',
+      imageTimeout: 20000, // Longer timeout for tiles
+      removeContainer: true,
+      foreignObjectRendering: false, // More compatible
+      onclone: (clonedDoc, clonedElement) => {
+        // Ensure all tile images have crossorigin attribute
+        const clonedTiles = clonedElement.querySelectorAll('.leaflet-tile');
+        clonedTiles.forEach((tile) => {
+          const img = tile as HTMLImageElement;
           img.crossOrigin = 'anonymous';
+          // Force reload with CORS
+          const originalSrc = img.src;
+          img.src = '';
+          img.src = originalSrc;
         });
         
-        // Hide any controls that shouldn't appear in PDF
+        // Hide Leaflet controls in PDF
         const controls = clonedDoc.querySelectorAll('.leaflet-control-container');
         controls.forEach(control => {
           (control as HTMLElement).style.display = 'none';
         });
+        
+        // Hide basemap selector and other overlays with pdf-hide class
+        const pdfHideElements = clonedDoc.querySelectorAll('.pdf-hide');
+        pdfHideElements.forEach((el) => {
+          (el as HTMLElement).style.display = 'none';
+        });
+        
+        // Hide absolute positioned overlays in map container
+        const overlays = clonedElement.querySelectorAll('[class*="absolute"]');
+        overlays.forEach((overlay) => {
+          const el = overlay as HTMLElement;
+          // Only hide if it's a direct child overlay, not Leaflet internal elements
+          if (!el.classList.contains('leaflet-pane') && !el.classList.contains('leaflet-tile-container')) {
+            el.style.display = 'none';
+          }
+        });
       }
     });
+    
+    // Validate that the canvas has actual content (not blank)
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const imageData = ctx.getImageData(0, 0, Math.min(100, canvas.width), Math.min(100, canvas.height));
+      const hasContent = imageData.data.some((pixel, idx) => idx % 4 !== 3 && pixel !== 248); // Check for non-background pixels
+      
+      if (!hasContent) {
+        console.warn('Map capture appears blank, falling back to polygon-only render');
+        return null;
+      }
+    }
     
     return canvas.toDataURL('image/png', 0.95);
   } catch (error) {

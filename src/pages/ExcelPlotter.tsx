@@ -106,6 +106,7 @@ const ExcelPlotter = () => {
   const currentBasemap = getBasemapById(basemapId);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mapRef = useRef<HTMLElement | null>(null);
 
   const saveState = useCallback(() => {
     setUndoStack(prev => [...prev.slice(-19), [...plottedAreas]]);
@@ -537,7 +538,13 @@ const ExcelPlotter = () => {
                     hectares: a.hectares || 0,
                     sqKm: a.sqKm || 0,
                   }));
-                  await exportMultiplePolygonsPdf(polygonData, { areaUnit: 'hectares', polygons: polygonData, dataSource: 'Excel Upload' });
+                  await exportMultiplePolygonsPdf(polygonData, { 
+                    areaUnit: 'hectares', 
+                    polygons: polygonData, 
+                    dataSource: 'Excel Upload',
+                    mapElement: mapRef.current,
+                    basemapId: basemapId,
+                  });
                   toast.success('PDF exported');
                 }}
               >
@@ -562,10 +569,10 @@ const ExcelPlotter = () => {
 
         {/* Map */}
         <div className="flex-1 relative">
-          <div className="absolute top-3 right-3 z-[1000]">
+          <div className="absolute top-3 right-3 z-[1000] pdf-hide">
             <BasemapSelector value={basemapId} onChange={setBasemapId} compact />
           </div>
-          <MapContainer center={[9.06, 7.49]} zoom={6} style={{ height: '100%', width: '100%' }}>
+          <MapContainer center={[9.06, 7.49]} zoom={6} style={{ height: '100%', width: '100%' }} ref={(el) => { if (el) mapRef.current = el.getContainer(); }}>
             <TileLayer
               key={basemapId}
               attribution={currentBasemap.attribution}
