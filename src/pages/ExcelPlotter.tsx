@@ -13,7 +13,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
-import { exportMultiplePolygonsPdf, LAND_USE_CATEGORIES, type AreaUnit, type PolygonData } from '@/utils/polygonPdfExport';
+import { exportMultiplePolygonsPdf, LAND_USE_CATEGORIES, type AreaUnit, type PolygonData, type PdfExportResult } from '@/utils/polygonPdfExport';
 import { eastingNorthingToLatLng, isProjectedCoordinate } from '@/utils/coordinateUtils';
 import { BasemapSelector } from '@/components/BasemapSelector';
 import { getBasemapById, DEFAULT_BASEMAP } from '@/utils/basemapConfig';

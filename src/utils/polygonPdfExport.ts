@@ -23,6 +23,14 @@ export interface PolygonData {
 export type AreaUnit = 'hectares' | 'acres' | 'sqMeters';
 export type PdfOrientation = 'portrait' | 'landscape' | 'auto';
 
+export interface MapCaptureResult {
+  imageData: string | null;
+  success: boolean;
+  message: string;
+  tilesLoaded: number;
+  tilesFailed: number;
+}
+
 export interface PdfExportConfig {
   areaUnit: AreaUnit;
   polygons: PolygonData[];
@@ -30,6 +38,7 @@ export interface PdfExportConfig {
   mapElement?: HTMLElement | null;
   orientation?: PdfOrientation;
   basemapId?: string;
+  includeBasemap?: boolean;
 }
 
 // Land use categories
@@ -387,20 +396,38 @@ function drawCornerCoordinates(
   pdf.text(`${formatCoord(extent.maxLng, false)}`, mapX + mapWidth - 14, mapY + mapHeight - 1);
 }
 
-// Wait for map tiles to fully load
-async function waitForTilesToLoad(mapElement: HTMLElement, timeout: number = 3000): Promise<void> {
+// Wait for map tiles to fully load with detailed status
+async function waitForTilesToLoad(mapElement: HTMLElement, timeout: number = 5000): Promise<{
+  loaded: number;
+  failed: number;
+  total: number;
+}> {
   return new Promise((resolve) => {
     const startTime = Date.now();
+    let loaded = 0;
+    let failed = 0;
     
     const checkTiles = () => {
-      const tiles = mapElement.querySelectorAll('.leaflet-tile');
-      const allLoaded = Array.from(tiles).every((tile) => {
-        const img = tile as HTMLImageElement;
-        return img.complete && img.naturalHeight !== 0;
+      const tiles = mapElement.querySelectorAll('.leaflet-tile') as NodeListOf<HTMLImageElement>;
+      const total = tiles.length;
+      loaded = 0;
+      failed = 0;
+      
+      tiles.forEach((tile) => {
+        if (tile.complete) {
+          if (tile.naturalHeight > 0 && tile.naturalWidth > 0) {
+            loaded++;
+          } else {
+            failed++;
+          }
+        }
       });
       
-      if (allLoaded || Date.now() - startTime > timeout) {
-        resolve();
+      const allProcessed = loaded + failed === total;
+      const timedOut = Date.now() - startTime > timeout;
+      
+      if (allProcessed || timedOut) {
+        resolve({ loaded, failed, total });
       } else {
         requestAnimationFrame(checkTiles);
       }
@@ -410,59 +437,114 @@ async function waitForTilesToLoad(mapElement: HTMLElement, timeout: number = 300
   });
 }
 
-// Enhanced map capture with better tile handling and CORS proxy fallback
-export async function captureMapWithTiles(mapElement: HTMLElement): Promise<string | null> {
-  try {
-    // Wait for tiles to fully load
-    await waitForTilesToLoad(mapElement, 3000);
-    
-    // Additional wait for rendering
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // Get all tile images and preload them with CORS
-    const tiles = mapElement.querySelectorAll('.leaflet-tile') as NodeListOf<HTMLImageElement>;
-    
-    // Create a promise to preload all tiles with CORS
-    const preloadPromises = Array.from(tiles).map((tile) => {
-      return new Promise<void>((resolve) => {
-        if (tile.complete) {
-          resolve();
-          return;
-        }
-        
-        const newImg = new Image();
-        newImg.crossOrigin = 'anonymous';
-        newImg.onload = () => resolve();
-        newImg.onerror = () => resolve(); // Continue even if one tile fails
-        newImg.src = tile.src;
-        
-        // Timeout fallback
-        setTimeout(() => resolve(), 2000);
-      });
+// Preload tiles with CORS for reliable capture
+async function preloadTilesWithCORS(tiles: NodeListOf<HTMLImageElement>): Promise<{
+  loaded: number;
+  failed: number;
+}> {
+  let loaded = 0;
+  let failed = 0;
+  
+  const preloadPromises = Array.from(tiles).map((tile) => {
+    return new Promise<boolean>((resolve) => {
+      // If already complete and valid, skip preloading
+      if (tile.complete && tile.naturalHeight > 0) {
+        loaded++;
+        resolve(true);
+        return;
+      }
+      
+      const newImg = new Image();
+      newImg.crossOrigin = 'anonymous';
+      
+      const timeoutId = setTimeout(() => {
+        failed++;
+        resolve(false);
+      }, 3000);
+      
+      newImg.onload = () => {
+        clearTimeout(timeoutId);
+        loaded++;
+        resolve(true);
+      };
+      
+      newImg.onerror = () => {
+        clearTimeout(timeoutId);
+        failed++;
+        resolve(false);
+      };
+      
+      // Add cache-busting for CORS if needed
+      const separator = tile.src.includes('?') ? '&' : '?';
+      newImg.src = tile.src + separator + '_cors=' + Date.now();
     });
+  });
+  
+  await Promise.all(preloadPromises);
+  return { loaded, failed };
+}
+
+// Enhanced map capture with detailed feedback and print-quality output
+export async function captureMapWithTiles(
+  mapElement: HTMLElement,
+  onProgress?: (message: string) => void
+): Promise<MapCaptureResult> {
+  try {
+    onProgress?.('Waiting for map tiles to load...');
     
-    await Promise.all(preloadPromises);
+    // Wait for tiles with extended timeout for reliability
+    const tileStatus = await waitForTilesToLoad(mapElement, 5000);
     
-    // Configure html2canvas with optimized settings for tile maps
+    if (tileStatus.total === 0) {
+      return {
+        imageData: null,
+        success: false,
+        message: 'No map tiles found. The map may not be fully loaded.',
+        tilesLoaded: 0,
+        tilesFailed: 0
+      };
+    }
+    
+    onProgress?.(`Loading ${tileStatus.total} tiles for capture...`);
+    
+    // Additional wait for complete rendering
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Get tiles and preload with CORS
+    const tiles = mapElement.querySelectorAll('.leaflet-tile') as NodeListOf<HTMLImageElement>;
+    const corsStatus = await preloadTilesWithCORS(tiles);
+    
+    // Check if too many tiles failed (potential offline issue)
+    const failureRate = corsStatus.failed / (corsStatus.loaded + corsStatus.failed);
+    if (failureRate > 0.5 && corsStatus.failed > 2) {
+      onProgress?.('Warning: Some tiles may be missing or cached...');
+    }
+    
+    onProgress?.('Capturing high-resolution map image...');
+    
+    // Additional stabilization wait
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Configure html2canvas for print-quality capture
     const canvas = await html2canvas(mapElement, {
       useCORS: true,
-      allowTaint: false, // Stricter - prevents tainted canvas
-      scale: 2, // Higher resolution for print quality
+      allowTaint: false,
+      scale: 3, // Higher resolution for print quality (300 DPI equivalent)
       logging: false,
       backgroundColor: '#f8fafc',
-      imageTimeout: 20000, // Longer timeout for tiles
+      imageTimeout: 30000,
       removeContainer: true,
-      foreignObjectRendering: false, // More compatible
+      foreignObjectRendering: false,
+      windowWidth: mapElement.scrollWidth,
+      windowHeight: mapElement.scrollHeight,
       onclone: (clonedDoc, clonedElement) => {
         // Ensure all tile images have crossorigin attribute
         const clonedTiles = clonedElement.querySelectorAll('.leaflet-tile');
         clonedTiles.forEach((tile) => {
           const img = tile as HTMLImageElement;
           img.crossOrigin = 'anonymous';
-          // Force reload with CORS
-          const originalSrc = img.src;
-          img.src = '';
-          img.src = originalSrc;
+          // Ensure proper styling for capture
+          img.style.imageRendering = 'crisp-edges';
         });
         
         // Hide Leaflet controls in PDF
@@ -481,31 +563,80 @@ export async function captureMapWithTiles(mapElement: HTMLElement): Promise<stri
         const overlays = clonedElement.querySelectorAll('[class*="absolute"]');
         overlays.forEach((overlay) => {
           const el = overlay as HTMLElement;
-          // Only hide if it's a direct child overlay, not Leaflet internal elements
           if (!el.classList.contains('leaflet-pane') && !el.classList.contains('leaflet-tile-container')) {
             el.style.display = 'none';
           }
         });
+        
+        // Ensure the tile container maintains correct transform
+        const tileContainers = clonedElement.querySelectorAll('.leaflet-tile-container');
+        tileContainers.forEach((container) => {
+          const el = container as HTMLElement;
+          el.style.willChange = 'auto';
+        });
       }
     });
     
-    // Validate that the canvas has actual content (not blank)
+    // Validate canvas has actual map content (not just background)
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      const imageData = ctx.getImageData(0, 0, Math.min(100, canvas.width), Math.min(100, canvas.height));
-      const hasContent = imageData.data.some((pixel, idx) => idx % 4 !== 3 && pixel !== 248); // Check for non-background pixels
+      // Sample multiple points across the canvas to check for content
+      const samplePoints = [
+        { x: Math.floor(canvas.width * 0.25), y: Math.floor(canvas.height * 0.25) },
+        { x: Math.floor(canvas.width * 0.5), y: Math.floor(canvas.height * 0.5) },
+        { x: Math.floor(canvas.width * 0.75), y: Math.floor(canvas.height * 0.75) },
+      ];
       
-      if (!hasContent) {
-        console.warn('Map capture appears blank, falling back to polygon-only render');
-        return null;
+      let hasVariedContent = false;
+      const sampledColors = new Set<string>();
+      
+      for (const point of samplePoints) {
+        const imageData = ctx.getImageData(point.x, point.y, 10, 10);
+        for (let i = 0; i < imageData.data.length; i += 4) {
+          const colorKey = `${imageData.data[i]}-${imageData.data[i+1]}-${imageData.data[i+2]}`;
+          sampledColors.add(colorKey);
+        }
+      }
+      
+      hasVariedContent = sampledColors.size > 10;
+      
+      if (!hasVariedContent) {
+        return {
+          imageData: null,
+          success: false,
+          message: 'Map capture appears blank. Tiles may not have loaded correctly.',
+          tilesLoaded: corsStatus.loaded,
+          tilesFailed: corsStatus.failed
+        };
       }
     }
     
-    return canvas.toDataURL('image/png', 0.95);
+    const imageData = canvas.toDataURL('image/png', 0.95);
+    
+    return {
+      imageData,
+      success: true,
+      message: `Basemap successfully embedded in PDF. (${corsStatus.loaded} tiles loaded${corsStatus.failed > 0 ? `, ${corsStatus.failed} missing` : ''})`,
+      tilesLoaded: corsStatus.loaded,
+      tilesFailed: corsStatus.failed
+    };
   } catch (error) {
     console.warn('Map capture failed:', error);
-    return null;
+    return {
+      imageData: null,
+      success: false,
+      message: `Map capture failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      tilesLoaded: 0,
+      tilesFailed: 0
+    };
   }
+}
+
+// Result type for export operations
+export interface PdfExportResult {
+  success: boolean;
+  basemapCaptured: boolean;
+  message: string;
 }
 
 // Main single-page export function
@@ -513,7 +644,7 @@ export async function exportPolygonPdf(
   polygon: PolygonData,
   config: PdfExportConfig,
   mapElement?: HTMLElement | null
-): Promise<void> {
+): Promise<PdfExportResult> {
   if (polygon.coordinates.length < 3) {
     throw new Error('Polygon must have at least 3 points');
   }
@@ -588,8 +719,13 @@ export async function exportPolygonPdf(
   
   // Try to capture map image with improved tile handling
   let mapImage: string | null = null;
-  if (mapElement) {
-    mapImage = await captureMapWithTiles(mapElement);
+  let captureResult: MapCaptureResult | null = null;
+  
+  const shouldIncludeBasemap = config.includeBasemap !== false; // Default to true
+  
+  if (mapElement && shouldIncludeBasemap) {
+    captureResult = await captureMapWithTiles(mapElement);
+    mapImage = captureResult.imageData;
   }
   
   if (mapImage) {
@@ -599,6 +735,9 @@ export async function exportPolygonPdf(
       drawPolygon(pdf, polygon.coordinates, mapX + 8, mapY + 8, mapWidth - 16, mapHeight - 16, extent);
     }
   } else {
+    // Draw on clean neutral background (when basemap off or capture failed)
+    pdf.setFillColor(245, 247, 250); // Light neutral background
+    pdf.rect(mapX, mapY, mapWidth, mapHeight, 'F');
     drawPolygon(pdf, polygon.coordinates, mapX + 8, mapY + 8, mapWidth - 16, mapHeight - 16, extent);
     drawCornerCoordinates(pdf, mapX, mapY, mapWidth, mapHeight, extent);
   }
@@ -807,13 +946,19 @@ export async function exportPolygonPdf(
   const filename = `${safeName}_PolygonReport_${orientation}_${fileDateStr}.pdf`;
   
   pdf.save(filename);
+  
+  return {
+    success: true,
+    basemapCaptured: captureResult?.success ?? false,
+    message: captureResult?.message ?? 'PDF exported without basemap'
+  };
 }
 
 // Export multiple polygons - single page summary
 export async function exportMultiplePolygonsPdf(
   polygons: PolygonData[],
   config: PdfExportConfig
-): Promise<void> {
+): Promise<PdfExportResult> {
   if (polygons.length === 0) {
     throw new Error('No polygons to export');
   }
@@ -1005,4 +1150,10 @@ export async function exportMultiplePolygonsPdf(
   const filename = `MultiPolygon_Report_${polygons.length}areas_${orientation}_${fileDateStr}.pdf`;
   
   pdf.save(filename);
+  
+  return {
+    success: true,
+    basemapCaptured: false,
+    message: 'Multi-polygon summary exported (basemap not included in summary view)'
+  };
 }
