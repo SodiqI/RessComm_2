@@ -7,13 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { Plus, Trash2, Download, RotateCcw, RotateCw, Eye, Home, FileSpreadsheet, Layers, AlertCircle, CheckCircle, FileText } from 'lucide-react';
 import JSZip from 'jszip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
-import { exportPolygonPdf, exportMultiplePolygonsPdf, LAND_USE_CATEGORIES, type AreaUnit, type PolygonData, type PdfOrientation } from '@/utils/polygonPdfExport';
+import { exportPolygonPdf, exportMultiplePolygonsPdf, LAND_USE_CATEGORIES, type AreaUnit, type PolygonData, type PdfOrientation, type PdfExportResult } from '@/utils/polygonPdfExport';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import { eastingNorthingToLatLng } from '@/utils/coordinateUtils';
@@ -221,6 +222,7 @@ const ManualPlotter = () => {
   const [pdfExportType, setPdfExportType] = useState<'single' | 'all'>('single');
   const [pdfSelectedPolygon, setPdfSelectedPolygon] = useState<number | null>(null);
   const [pdfOrientation, setPdfOrientation] = useState<PdfOrientation>('auto');
+  const [pdfIncludeBasemap, setPdfIncludeBasemap] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   
   // Basemap state
@@ -502,16 +504,23 @@ const ManualPlotter = () => {
           sqKm: polygon.sqKm,
         };
         
-        await exportPolygonPdf(polygonData, {
+        const result: PdfExportResult = await exportPolygonPdf(polygonData, {
           areaUnit: pdfAreaUnit,
           polygons: [polygonData],
           dataSource: 'Manual Plotter',
           mapElement: mapRef.current,
           orientation: pdfOrientation,
           basemapId: basemapId,
+          includeBasemap: pdfIncludeBasemap,
         });
         
-        toast.success('PDF exported successfully');
+        if (result.basemapCaptured) {
+          toast.success(result.message);
+        } else if (pdfIncludeBasemap) {
+          toast.warning('PDF exported. ' + result.message);
+        } else {
+          toast.success('PDF exported successfully (basemap excluded)');
+        }
         setPdfExportOpen(false);
       } catch (error) {
         toast.error('Failed to export PDF');
@@ -543,6 +552,7 @@ const ManualPlotter = () => {
           dataSource: 'Manual Plotter',
           orientation: pdfOrientation,
           basemapId: basemapId,
+          includeBasemap: pdfIncludeBasemap,
         });
         
         toast.success('PDF report exported successfully');
@@ -925,6 +935,21 @@ const ManualPlotter = () => {
                         </SelectContent>
                       </Select>
                     </div>
+                    {pdfExportType === 'single' && (
+                      <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                        <div className="space-y-0.5">
+                          <Label htmlFor="include-basemap" className="text-sm font-medium">Include basemap in PDF</Label>
+                          <p className="text-xs text-muted-foreground">
+                            Captures the visible map tiles exactly as shown
+                          </p>
+                        </div>
+                        <Switch
+                          id="include-basemap"
+                          checked={pdfIncludeBasemap}
+                          onCheckedChange={setPdfIncludeBasemap}
+                        />
+                      </div>
+                    )}
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setPdfExportOpen(false)}>Cancel</Button>
