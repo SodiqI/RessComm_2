@@ -228,7 +228,7 @@ const ManualPlotter = () => {
   const currentBasemap = getBasemapById(basemapId);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const mapRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<HTMLElement | null>(null);
   
   // Preview bulk parsing result (debounced effect via useMemo)
   const bulkPreview = useMemo(() => {
@@ -951,11 +951,11 @@ const ManualPlotter = () => {
         </div>
 
         {/* Map */}
-        <div className="flex-1 relative" ref={mapRef}>
-          <div className="absolute top-3 right-3 z-[1000]">
+        <div className="flex-1 relative">
+          <div className="absolute top-3 right-3 z-[1000] pdf-hide">
             <BasemapSelector value={basemapId} onChange={setBasemapId} compact />
           </div>
-          <MapContainer center={[9.06, 7.49]} zoom={6} style={{ height: '100%', width: '100%' }}>
+          <MapContainer center={[9.06, 7.49]} zoom={6} style={{ height: '100%', width: '100%' }} ref={(el) => { if (el) mapRef.current = el.getContainer(); }}>
             <TileLayer
               key={basemapId}
               attribution={currentBasemap.attribution}
