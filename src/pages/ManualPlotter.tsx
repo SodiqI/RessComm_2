@@ -19,7 +19,7 @@ import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import { eastingNorthingToLatLng } from '@/utils/coordinateUtils';
 import { BasemapSelector } from '@/components/BasemapSelector';
-import { getBasemapById, DEFAULT_BASEMAP } from '@/utils/basemapConfig';
+import { getBasemapById, DEFAULT_BASEMAP, isBasemapCorsEnabled } from '@/utils/basemapConfig';
 import 'leaflet/dist/leaflet.css';
 
 type CoordType = 'latLng' | 'eastingNorthing';
@@ -936,18 +936,37 @@ const ManualPlotter = () => {
                       </Select>
                     </div>
                     {pdfExportType === 'single' && (
-                      <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
-                        <div className="space-y-0.5">
-                          <Label htmlFor="include-basemap" className="text-sm font-medium">Include basemap in PDF</Label>
-                          <p className="text-xs text-muted-foreground">
-                            Captures the visible map tiles exactly as shown
-                          </p>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="include-basemap" className="text-sm font-medium">Include basemap in PDF</Label>
+                            <p className="text-xs text-muted-foreground">
+                              Captures the visible map tiles exactly as shown
+                            </p>
+                          </div>
+                          <Switch
+                            id="include-basemap"
+                            checked={pdfIncludeBasemap}
+                            onCheckedChange={setPdfIncludeBasemap}
+                          />
                         </div>
-                        <Switch
-                          id="include-basemap"
-                          checked={pdfIncludeBasemap}
-                          onCheckedChange={setPdfIncludeBasemap}
-                        />
+                        {pdfIncludeBasemap && !isBasemapCorsEnabled(basemapId) && (
+                          <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+                            <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                            <div className="space-y-1">
+                              <p className="text-amber-800 font-medium">Current basemap may not export correctly</p>
+                              <p className="text-amber-700 text-xs">
+                                Switch to a basemap marked with ★ (like Carto or Esri) for reliable PDF capture.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        {pdfIncludeBasemap && isBasemapCorsEnabled(basemapId) && (
+                          <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            Basemap is compatible with PDF export
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
