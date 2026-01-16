@@ -122,6 +122,9 @@ export function getPlainTextAttribution(id: string): string {
     .trim();
 }
 
+// Alias for backward compatibility
+export const getBasemapAttribution = getPlainTextAttribution;
+
 // Check if a basemap supports CORS for canvas capture
 export function isBasemapCorsEnabled(id: string): boolean {
   const basemap = getBasemapById(id);
