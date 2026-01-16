@@ -1,8 +1,9 @@
 // PDF Export utilities for Manual and Excel Plotter - Single-page polygon reports
-// Enhanced with CORS-safe basemap capture and print-quality rendering
+// Enhanced with CORS-safe basemap capture via Supabase tile proxy and print-quality rendering
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { getPlainTextAttribution, isBasemapCorsEnabled, getBasemapById } from './basemapConfig';
+import { getProxiedTileUrl } from './tileProxyService';
 
 // Types
 export interface PolygonPoint {
@@ -505,13 +506,13 @@ export async function captureMapWithTiles(
   // Check CORS support for current basemap
   const corsSupported = basemapId ? isBasemapCorsEnabled(basemapId) : false;
   const basemapInfo = basemapId ? getBasemapById(basemapId) : null;
+  const useProxy = !corsSupported; // Use Supabase proxy for non-CORS basemaps
   
   try {
     onProgress?.('Checking basemap compatibility...');
     
-    // Warn if basemap doesn't support CORS
     if (!corsSupported) {
-      onProgress?.('Warning: Current basemap may not support PDF capture. Consider switching to a CORS-enabled basemap (marked with ★).');
+      onProgress?.('Using Supabase tile proxy for basemap capture...');
     }
     
     onProgress?.('Waiting for map tiles to load...');
@@ -566,11 +567,33 @@ export async function captureMapWithTiles(
       foreignObjectRendering: false,
       windowWidth: mapElement.scrollWidth,
       windowHeight: mapElement.scrollHeight,
-      onclone: (clonedDoc, clonedElement) => {
+      onclone: async (clonedDoc, clonedElement) => {
+        // For non-CORS basemaps, replace tile URLs with proxied versions
+        const clonedTiles = clonedElement.querySelectorAll('.leaflet-tile') as NodeListOf<HTMLImageElement>;
+        
+        if (useProxy) {
+          // Replace tile sources with proxied URLs
+          const proxyPromises = Array.from(clonedTiles).map(async (tile) => {
+            const originalSrc = tile.getAttribute('data-original-src') || tile.src;
+            if (originalSrc && !originalSrc.startsWith('data:') && !originalSrc.startsWith('blob:')) {
+              try {
+                const proxiedUrl = getProxiedTileUrl(originalSrc);
+                const response = await fetch(proxiedUrl);
+                if (response.ok) {
+                  const blob = await response.blob();
+                  tile.src = URL.createObjectURL(blob);
+                }
+              } catch (e) {
+                console.warn('Failed to proxy tile:', originalSrc, e);
+              }
+            }
+          });
+          
+          await Promise.all(proxyPromises);
+        }
+        
         // Ensure all tile images have crossorigin attribute for CORS
-        const clonedTiles = clonedElement.querySelectorAll('.leaflet-tile');
-        clonedTiles.forEach((tile) => {
-          const img = tile as HTMLImageElement;
+        clonedTiles.forEach((img) => {
           img.crossOrigin = 'anonymous';
           // Ensure crisp rendering without blur/stretch
           img.style.imageRendering = 'crisp-edges';
