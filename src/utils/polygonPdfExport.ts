@@ -1,9 +1,17 @@
 // PDF Export utilities for Manual and Excel Plotter - Single-page polygon reports
-// Enhanced with CORS-safe basemap capture via Supabase tile proxy and print-quality rendering
+// 
+// BASEMAP HANDLING STRATEGY:
+// PDF exports hide the basemap TileLayer before capturing with html2canvas to avoid CORS issues.
+// Data layers (polygons, markers, polylines) are captured on a clean white background.
+// This ensures reliable PDF generation across all basemap providers.
+// 
+// Helper functions are exported for use in other modules (e.g., ZULIM):
+// - hideBasemapLayer(): Hides basemap tiles before capture
+// - restoreBasemapLayer(): Restores basemap after capture (ALWAYS call even if capture fails)
+// 
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { getPlainTextAttribution, isBasemapCorsEnabled, getBasemapById } from './basemapConfig';
-import { getProxiedTileUrl } from './tileProxyService';
 
 // Types
 export interface PolygonPoint {
@@ -401,242 +409,207 @@ function drawCornerCoordinates(
   pdf.text(`${formatCoord(extent.maxLng, false)}`, mapX + mapWidth - 14, mapY + mapHeight - 1);
 }
 
-// Wait for map tiles to fully load with detailed status
-async function waitForTilesToLoad(mapElement: HTMLElement, timeout: number = 5000): Promise<{
-  loaded: number;
-  failed: number;
-  total: number;
-}> {
-  return new Promise((resolve) => {
-    const startTime = Date.now();
-    let loaded = 0;
-    let failed = 0;
-    
-    const checkTiles = () => {
-      const tiles = mapElement.querySelectorAll('.leaflet-tile') as NodeListOf<HTMLImageElement>;
-      const total = tiles.length;
-      loaded = 0;
-      failed = 0;
-      
-      tiles.forEach((tile) => {
-        if (tile.complete) {
-          if (tile.naturalHeight > 0 && tile.naturalWidth > 0) {
-            loaded++;
-          } else {
-            failed++;
-          }
-        }
-      });
-      
-      const allProcessed = loaded + failed === total;
-      const timedOut = Date.now() - startTime > timeout;
-      
-      if (allProcessed || timedOut) {
-        resolve({ loaded, failed, total });
-      } else {
-        requestAnimationFrame(checkTiles);
-      }
-    };
-    
-    checkTiles();
-  });
-}
+// ============================================================================
+// BASEMAP LAYER MANAGEMENT FOR PDF EXPORT
+// These helper functions hide/restore the basemap tile layer to avoid CORS issues
+// during html2canvas capture while preserving data layers (polygons, markers, etc.)
+// ============================================================================
 
-// Preload tiles with CORS for reliable capture
-async function preloadTilesWithCORS(tiles: NodeListOf<HTMLImageElement>): Promise<{
-  loaded: number;
-  failed: number;
-}> {
-  let loaded = 0;
-  let failed = 0;
-  
-  const preloadPromises = Array.from(tiles).map((tile) => {
-    return new Promise<boolean>((resolve) => {
-      // If already complete and valid, skip preloading
-      if (tile.complete && tile.naturalHeight > 0) {
-        loaded++;
-        resolve(true);
-        return;
-      }
-      
-      const newImg = new Image();
-      newImg.crossOrigin = 'anonymous';
-      
-      const timeoutId = setTimeout(() => {
-        failed++;
-        resolve(false);
-      }, 3000);
-      
-      newImg.onload = () => {
-        clearTimeout(timeoutId);
-        loaded++;
-        resolve(true);
-      };
-      
-      newImg.onerror = () => {
-        clearTimeout(timeoutId);
-        failed++;
-        resolve(false);
-      };
-      
-      // Add cache-busting for CORS if needed
-      const separator = tile.src.includes('?') ? '&' : '?';
-      newImg.src = tile.src + separator + '_cors=' + Date.now();
-    });
-  });
-  
-  await Promise.all(preloadPromises);
-  return { loaded, failed };
+interface BasemapLayerState {
+  tilePane: HTMLElement | null;
+  originalDisplay: string;
+  originalOpacity: string;
+  attributionControl: HTMLElement | null;
+  attributionOriginalDisplay: string;
 }
 
 /**
- * Enhanced map capture with CORS validation, print-quality rendering, and detailed feedback.
- * Uses a multi-stage approach:
- * 1. Wait for all visible tiles to load
- * 2. Validate CORS support for the current basemap
- * 3. Preload tiles with CORS headers
- * 4. Capture at high resolution (300 DPI equivalent)
- * 5. Validate canvas is not tainted and has content
+ * Hide the basemap tile layer before capturing the map with html2canvas.
+ * This prevents CORS issues since basemap tiles from OSM/Bing/etc. cannot be captured.
+ * Data layers (polygons, markers, polylines) will still render correctly.
+ * 
+ * @param mapElement The Leaflet map container element
+ * @returns State object needed to restore the basemap later
+ */
+export function hideBasemapLayer(mapElement: HTMLElement): BasemapLayerState {
+  const state: BasemapLayerState = {
+    tilePane: null,
+    originalDisplay: '',
+    originalOpacity: '',
+    attributionControl: null,
+    attributionOriginalDisplay: '',
+  };
+  
+  try {
+    // Find and hide the tile pane (contains all basemap tiles)
+    const tilePane = mapElement.querySelector('.leaflet-tile-pane') as HTMLElement | null;
+    if (tilePane) {
+      state.tilePane = tilePane;
+      state.originalDisplay = tilePane.style.display;
+      state.originalOpacity = tilePane.style.opacity;
+      tilePane.style.display = 'none';
+    }
+    
+    // Also hide attribution control (will be added to PDF footer manually)
+    const attributionControl = mapElement.querySelector('.leaflet-control-attribution') as HTMLElement | null;
+    if (attributionControl) {
+      state.attributionControl = attributionControl;
+      state.attributionOriginalDisplay = attributionControl.style.display;
+      attributionControl.style.display = 'none';
+    }
+    
+    console.log('[PDF Export] Basemap layer hidden for capture');
+  } catch (e) {
+    console.warn('[PDF Export] Error hiding basemap layer:', e);
+  }
+  
+  return state;
+}
+
+/**
+ * Restore the basemap tile layer after capturing the map.
+ * This should ALWAYS be called after captureMapWithTiles, even if capture fails.
+ * 
+ * @param state The state object returned from hideBasemapLayer
+ */
+export function restoreBasemapLayer(state: BasemapLayerState): void {
+  try {
+    // Restore tile pane visibility
+    if (state.tilePane) {
+      state.tilePane.style.display = state.originalDisplay;
+      state.tilePane.style.opacity = state.originalOpacity;
+    }
+    
+    // Restore attribution control
+    if (state.attributionControl) {
+      state.attributionControl.style.display = state.attributionOriginalDisplay;
+    }
+    
+    console.log('[PDF Export] Basemap layer restored');
+  } catch (e) {
+    console.warn('[PDF Export] Error restoring basemap layer:', e);
+  }
+}
+
+/**
+ * Set the map background color for data-only capture.
+ * Creates a clean white/neutral background when basemap is hidden.
+ */
+function setMapBackgroundForCapture(mapElement: HTMLElement): string {
+  const mapContainer = mapElement.querySelector('.leaflet-container') as HTMLElement || mapElement;
+  const originalBg = mapContainer.style.backgroundColor;
+  mapContainer.style.backgroundColor = '#ffffff';
+  return originalBg;
+}
+
+/**
+ * Restore the original map background color.
+ */
+function restoreMapBackground(mapElement: HTMLElement, originalBg: string): void {
+  const mapContainer = mapElement.querySelector('.leaflet-container') as HTMLElement || mapElement;
+  mapContainer.style.backgroundColor = originalBg;
+}
+
+/**
+ * Capture the map for PDF export.
+ * 
+ * STRATEGY: 
+ * When includeBasemap is false (or basemap capture fails due to CORS):
+ * - Hide the basemap tile layer BEFORE capturing
+ * - Capture data layers only (polygons, markers, etc.) on white background
+ * - Restore the basemap tile layer AFTER capture
+ * - Add note in PDF: "(Data layers only - basemap not included for compatibility)"
+ * 
+ * When includeBasemap is true and basemap is CORS-enabled:
+ * - Attempt to capture with basemap tiles
+ * - Fall back to data-only capture if CORS fails
+ * 
+ * @param mapElement The Leaflet map container element
+ * @param basemapId Optional basemap identifier for CORS checking
+ * @param includeBasemap Whether to attempt basemap capture (default: true)
+ * @param onProgress Optional progress callback
  */
 export async function captureMapWithTiles(
   mapElement: HTMLElement,
   basemapId?: string,
+  includeBasemap: boolean = true,
   onProgress?: (message: string) => void
 ): Promise<MapCaptureResult> {
-  // Check CORS support for current basemap
   const corsSupported = basemapId ? isBasemapCorsEnabled(basemapId) : false;
   const basemapInfo = basemapId ? getBasemapById(basemapId) : null;
-  const useProxy = !corsSupported; // Use Supabase proxy for non-CORS basemaps
+  
+  // Determine capture strategy
+  const attemptBasemapCapture = includeBasemap && corsSupported;
+  
+  let basemapState: BasemapLayerState | null = null;
+  let originalBackground = '';
   
   try {
-    onProgress?.('Checking basemap compatibility...');
-    
-    if (!corsSupported) {
-      onProgress?.('Using Supabase tile proxy for basemap capture...');
+    if (!attemptBasemapCapture) {
+      // Strategy: Capture data layers only (hide basemap)
+      onProgress?.('Preparing data layers for capture...');
+      
+      // Hide basemap to avoid CORS issues
+      basemapState = hideBasemapLayer(mapElement);
+      
+      // Set white background for clean capture
+      originalBackground = setMapBackgroundForCapture(mapElement);
+      
+      // Brief wait for DOM to update
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      onProgress?.('Capturing polygon and data layers...');
+    } else {
+      // Strategy: Attempt basemap capture (CORS-enabled basemaps only)
+      onProgress?.('Loading basemap tiles for capture...');
+      
+      // Wait for tiles to settle
+      await new Promise(resolve => setTimeout(resolve, 800));
     }
     
-    onProgress?.('Waiting for map tiles to load...');
+    // Capture at print quality (300 DPI equivalent)
+    onProgress?.('Generating high-resolution image...');
     
-    // Wait for tiles with extended timeout for reliability
-    const tileStatus = await waitForTilesToLoad(mapElement, 8000);
-    
-    if (tileStatus.total === 0) {
-      return {
-        imageData: null,
-        success: false,
-        message: 'No map tiles found. The map may not be fully loaded.',
-        tilesLoaded: 0,
-        tilesFailed: 0,
-        corsSupported,
-        basemapName: basemapInfo?.name,
-      };
-    }
-    
-    onProgress?.(`Loading ${tileStatus.total} tiles for capture...`);
-    
-    // Additional wait for complete rendering
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // Get tiles and preload with CORS
-    const tiles = mapElement.querySelectorAll('.leaflet-tile') as NodeListOf<HTMLImageElement>;
-    const corsStatus = await preloadTilesWithCORS(tiles);
-    
-    // Check if too many tiles failed (potential offline issue)
-    const totalTiles = corsStatus.loaded + corsStatus.failed;
-    const failureRate = totalTiles > 0 ? corsStatus.failed / totalTiles : 0;
-    const isOffline = failureRate > 0.5 && corsStatus.failed > 2;
-    
-    if (isOffline) {
-      onProgress?.('Warning: Basemap partially rendered due to offline mode.');
-    }
-    
-    onProgress?.('Capturing high-resolution map image...');
-    
-    // Additional stabilization wait
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Configure html2canvas for print-quality capture (300 DPI equivalent)
     const canvas = await html2canvas(mapElement, {
-      useCORS: true,
+      useCORS: attemptBasemapCapture,
       allowTaint: false,
-      scale: 3, // Higher resolution for print quality (300 DPI equivalent at ~100 DPI screen)
+      scale: 3, // 300 DPI equivalent for print quality
       logging: false,
-      backgroundColor: '#f8fafc',
-      imageTimeout: 30000,
+      backgroundColor: attemptBasemapCapture ? null : '#ffffff',
+      imageTimeout: 15000,
       removeContainer: true,
       foreignObjectRendering: false,
       windowWidth: mapElement.scrollWidth,
       windowHeight: mapElement.scrollHeight,
-      onclone: async (clonedDoc, clonedElement) => {
-        // For non-CORS basemaps, replace tile URLs with proxied versions
-        const clonedTiles = clonedElement.querySelectorAll('.leaflet-tile') as NodeListOf<HTMLImageElement>;
-        
-        if (useProxy) {
-          // Replace tile sources with proxied URLs
-          const proxyPromises = Array.from(clonedTiles).map(async (tile) => {
-            const originalSrc = tile.getAttribute('data-original-src') || tile.src;
-            if (originalSrc && !originalSrc.startsWith('data:') && !originalSrc.startsWith('blob:')) {
-              try {
-                const proxiedUrl = getProxiedTileUrl(originalSrc);
-                const response = await fetch(proxiedUrl);
-                if (response.ok) {
-                  const blob = await response.blob();
-                  tile.src = URL.createObjectURL(blob);
-                }
-              } catch (e) {
-                console.warn('Failed to proxy tile:', originalSrc, e);
-              }
-            }
-          });
-          
-          await Promise.all(proxyPromises);
-        }
-        
-        // Ensure all tile images have crossorigin attribute for CORS
-        clonedTiles.forEach((img) => {
-          img.crossOrigin = 'anonymous';
-          // Ensure crisp rendering without blur/stretch
-          img.style.imageRendering = 'crisp-edges';
-          img.style.transform = 'translateZ(0)'; // Force GPU rendering
-        });
-        
+      onclone: (clonedDoc, clonedElement) => {
         // Hide Leaflet controls in PDF
         const controls = clonedDoc.querySelectorAll('.leaflet-control-container');
         controls.forEach(control => {
           (control as HTMLElement).style.display = 'none';
         });
         
-        // Hide basemap selector and other overlays with pdf-hide class
+        // Hide elements marked with pdf-hide class
         const pdfHideElements = clonedDoc.querySelectorAll('.pdf-hide');
         pdfHideElements.forEach((el) => {
           (el as HTMLElement).style.display = 'none';
         });
         
-        // Hide absolute positioned overlays in map container
+        // Hide absolute positioned overlays (but not leaflet panes)
         const overlays = clonedElement.querySelectorAll('[class*="absolute"]');
         overlays.forEach((overlay) => {
           const el = overlay as HTMLElement;
-          if (!el.classList.contains('leaflet-pane') && !el.classList.contains('leaflet-tile-container')) {
+          if (!el.classList.contains('leaflet-pane') && 
+              !el.classList.contains('leaflet-tile-container') &&
+              !el.classList.contains('leaflet-overlay-pane')) {
             el.style.display = 'none';
           }
         });
         
-        // Ensure tile containers maintain correct transform and layer order
-        const tileContainers = clonedElement.querySelectorAll('.leaflet-tile-container');
-        tileContainers.forEach((container) => {
-          const el = container as HTMLElement;
-          el.style.willChange = 'auto';
-        });
-        
-        // Enforce layer order: basemap → polygon → overlays
-        const tilePanes = clonedElement.querySelectorAll('.leaflet-tile-pane');
-        tilePanes.forEach((pane) => {
-          (pane as HTMLElement).style.zIndex = '1';
-        });
-        
+        // Ensure overlay pane (polygons) is visible and on top
         const overlayPanes = clonedElement.querySelectorAll('.leaflet-overlay-pane');
         overlayPanes.forEach((pane) => {
-          (pane as HTMLElement).style.zIndex = '2';
+          (pane as HTMLElement).style.zIndex = '400';
+          (pane as HTMLElement).style.opacity = '1';
         });
       }
     });
@@ -647,97 +620,99 @@ export async function captureMapWithTiles(
       canvas.toDataURL();
     } catch (e) {
       canvasTainted = true;
+      console.warn('[PDF Export] Canvas tainted:', e);
     }
     
     if (canvasTainted) {
+      // If basemap capture failed due to CORS, fall back to data-only capture
+      if (attemptBasemapCapture && !basemapState) {
+        onProgress?.('Basemap capture failed, falling back to data layers only...');
+        
+        // Recursively call with includeBasemap = false
+        return captureMapWithTiles(mapElement, basemapId, false, onProgress);
+      }
+      
       return {
         imageData: null,
         success: false,
-        message: `Basemap could not be embedded due to tile restrictions. Switch to a supported basemap (marked with ★) or disable basemap in PDF.`,
-        tilesLoaded: corsStatus.loaded,
-        tilesFailed: corsStatus.failed,
+        message: 'Map capture failed due to security restrictions. Please try disabling basemap in PDF settings.',
+        tilesLoaded: 0,
+        tilesFailed: 0,
         corsSupported: false,
         basemapName: basemapInfo?.name,
       };
     }
     
-    // Validate canvas has actual map content (not just background)
+    // Validate canvas has actual content (not blank)
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      // Sample multiple points across the canvas to check for varied content
-      const samplePoints = [
-        { x: Math.floor(canvas.width * 0.25), y: Math.floor(canvas.height * 0.25) },
-        { x: Math.floor(canvas.width * 0.5), y: Math.floor(canvas.height * 0.5) },
-        { x: Math.floor(canvas.width * 0.75), y: Math.floor(canvas.height * 0.75) },
-        { x: Math.floor(canvas.width * 0.1), y: Math.floor(canvas.height * 0.9) },
-      ];
+      const centerData = ctx.getImageData(
+        Math.floor(canvas.width / 2) - 10,
+        Math.floor(canvas.height / 2) - 10,
+        20, 20
+      );
       
-      const sampledColors = new Set<string>();
-      
-      for (const point of samplePoints) {
-        const imageData = ctx.getImageData(point.x, point.y, 15, 15);
-        for (let i = 0; i < imageData.data.length; i += 4) {
-          const colorKey = `${imageData.data[i]}-${imageData.data[i+1]}-${imageData.data[i+2]}`;
-          sampledColors.add(colorKey);
-        }
+      const uniqueColors = new Set<string>();
+      for (let i = 0; i < centerData.data.length; i += 4) {
+        uniqueColors.add(`${centerData.data[i]}-${centerData.data[i+1]}-${centerData.data[i+2]}`);
       }
       
-      const hasVariedContent = sampledColors.size > 15;
-      
-      if (!hasVariedContent) {
-        return {
-          imageData: null,
-          success: false,
-          message: 'Map capture appears blank. Tiles may not have loaded correctly or basemap does not support CORS.',
-          tilesLoaded: corsStatus.loaded,
-          tilesFailed: corsStatus.failed,
-          corsSupported,
-          basemapName: basemapInfo?.name,
-        };
+      // If less than 3 unique colors in center, likely blank
+      if (uniqueColors.size < 3) {
+        console.warn('[PDF Export] Canvas appears mostly blank');
       }
     }
     
     const imageData = canvas.toDataURL('image/png', 0.95);
     
-    // Build success message
-    let message = 'Basemap successfully embedded in PDF.';
-    if (corsStatus.loaded > 0) {
-      message += ` (${corsStatus.loaded} tiles loaded`;
-      if (corsStatus.failed > 0) {
-        message += `, ${corsStatus.failed} missing`;
-      }
-      message += ')';
+    // Build appropriate message
+    let message: string;
+    if (attemptBasemapCapture) {
+      message = 'Map with basemap successfully captured.';
+    } else {
+      message = 'Data layers captured successfully. (Basemap excluded for compatibility)';
     }
     
     return {
       imageData,
       success: true,
       message,
-      tilesLoaded: corsStatus.loaded,
-      tilesFailed: corsStatus.failed,
-      corsSupported: true,
+      tilesLoaded: attemptBasemapCapture ? 1 : 0,
+      tilesFailed: 0,
+      corsSupported: attemptBasemapCapture,
       basemapName: basemapInfo?.name,
-      offlineWarning: isOffline,
+      offlineWarning: false,
     };
+    
   } catch (error) {
-    console.warn('Map capture failed:', error);
+    console.error('[PDF Export] Map capture error:', error);
     
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const isCorsError = errorMessage.toLowerCase().includes('cors') || 
-                        errorMessage.toLowerCase().includes('tainted') ||
-                        errorMessage.toLowerCase().includes('cross-origin');
+    
+    // If this was a basemap attempt that failed, try data-only
+    if (attemptBasemapCapture && !basemapState) {
+      onProgress?.('Basemap capture failed, retrying with data layers only...');
+      return captureMapWithTiles(mapElement, basemapId, false, onProgress);
+    }
     
     return {
       imageData: null,
       success: false,
-      message: isCorsError 
-        ? `Basemap could not be embedded due to tile restrictions. Switch to a supported basemap (marked with ★) or disable basemap in PDF.`
-        : `Map capture failed: ${errorMessage}`,
+      message: `Map capture failed: ${errorMessage}. Please try exporting without basemap.`,
       tilesLoaded: 0,
       tilesFailed: 0,
-      corsSupported: !isCorsError,
+      corsSupported: false,
       basemapName: basemapInfo?.name,
     };
+    
+  } finally {
+    // ALWAYS restore basemap layer, even if capture failed
+    if (basemapState) {
+      restoreBasemapLayer(basemapState);
+    }
+    if (originalBackground) {
+      restoreMapBackground(mapElement, originalBackground);
+    }
   }
 }
 
@@ -829,17 +804,35 @@ export async function exportPolygonPdf(
   // Try to capture map image with improved tile handling
   let mapImage: string | null = null;
   let captureResult: MapCaptureResult | null = null;
+  let basemapIncluded = false;
   
   const shouldIncludeBasemap = config.includeBasemap !== false; // Default to true
   
-  if (mapElement && shouldIncludeBasemap) {
-    captureResult = await captureMapWithTiles(mapElement, config.basemapId);
+  if (mapElement) {
+    // Pass includeBasemap flag to capture function
+    captureResult = await captureMapWithTiles(
+      mapElement, 
+      config.basemapId, 
+      shouldIncludeBasemap
+    );
     mapImage = captureResult.imageData;
+    basemapIncluded = captureResult.success && captureResult.corsSupported;
   }
   
   if (mapImage) {
     try {
       pdf.addImage(mapImage, 'PNG', mapX + 0.5, mapY + 0.5, mapWidth - 1, mapHeight - 1);
+      
+      // Add note if basemap was not included
+      if (!basemapIncluded) {
+        pdf.setFillColor(255, 255, 255);
+        pdf.setGState(pdf.GState({ opacity: 0.85 }));
+        pdf.roundedRect(mapX + 3, mapY + 3, 75, 6, 1, 1, 'F');
+        pdf.setGState(pdf.GState({ opacity: 1 }));
+        pdf.setFontSize(5);
+        pdf.setTextColor(100, 100, 100);
+        pdf.text('(Data layers only - basemap not included for compatibility)', mapX + 5, mapY + 7);
+      }
     } catch {
       drawPolygon(pdf, polygon.coordinates, mapX + 8, mapY + 8, mapWidth - 16, mapHeight - 16, extent);
     }
@@ -849,6 +842,11 @@ export async function exportPolygonPdf(
     pdf.rect(mapX, mapY, mapWidth, mapHeight, 'F');
     drawPolygon(pdf, polygon.coordinates, mapX + 8, mapY + 8, mapWidth - 16, mapHeight - 16, extent);
     drawCornerCoordinates(pdf, mapX, mapY, mapWidth, mapHeight, extent);
+    
+    // Add note about basemap not included
+    pdf.setFontSize(5);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text('(Data layers only - basemap not included for compatibility)', mapX + 5, mapY + mapHeight - 5);
   }
   
   // Scale bar (bottom-left inside map)
@@ -1019,7 +1017,10 @@ export async function exportPolygonPdf(
     pdf.setFontSize(4.5);
     pdf.setFont('helvetica', 'italic');
     pdf.setTextColor(COLORS.textMuted[0], COLORS.textMuted[1], COLORS.textMuted[2]);
-    pdf.text(`Basemap: ${attribution}`, margin + 2, attrY);
+    
+    // Include note about basemap status
+    const basemapStatus = basemapIncluded ? '' : ' (not captured in PDF)';
+    pdf.text(`Basemap: ${attribution}${basemapStatus}`, margin + 2, attrY);
   }
   
   // === DISCLAIMER FOOTER ===
@@ -1056,10 +1057,24 @@ export async function exportPolygonPdf(
   
   pdf.save(filename);
   
+  // Build result message
+  let resultMessage: string;
+  if (captureResult?.success) {
+    if (basemapIncluded) {
+      resultMessage = 'PDF exported with basemap.';
+    } else {
+      resultMessage = 'PDF exported. (Data layers only - basemap not included for compatibility)';
+    }
+  } else if (captureResult?.message) {
+    resultMessage = captureResult.message;
+  } else {
+    resultMessage = 'PDF exported without map capture.';
+  }
+  
   return {
     success: true,
-    basemapCaptured: captureResult?.success ?? false,
-    message: captureResult?.message ?? 'PDF exported without basemap'
+    basemapCaptured: basemapIncluded,
+    message: resultMessage
   };
 }
 
