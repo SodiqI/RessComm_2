@@ -760,34 +760,70 @@ async function drawMapPage(
     try {
       onProgress?.(50 + pageNum * 5, `Capturing ${layerInfo.short}...`);
       
-      const canvas = await html2canvas(mapRef.current, {
-        useCORS: true,
-        allowTaint: true,
-        scale: 2,
-        logging: false,
-        backgroundColor: '#f5f5f5'
-      });
+      // Hide basemap tile layer before capture to avoid CORS issues
+      const tilePane = mapRef.current.querySelector('.leaflet-tile-pane') as HTMLElement | null;
+      const tilePaneOriginalDisplay = tilePane?.style.display || '';
       
-      const imgData = canvas.toDataURL('image/png');
-      const imgAspect = canvas.width / canvas.height;
-      
-      if (imgAspect > maxMapWidth / maxMapHeight) {
-        mapWidth = maxMapWidth;
-        mapHeight = mapWidth / imgAspect;
-      } else {
-        mapHeight = maxMapHeight;
-        mapWidth = mapHeight * imgAspect;
+      if (tilePane) {
+        tilePane.style.display = 'none';
       }
       
-      pdf.setDrawColor(100, 100, 100);
-      pdf.setLineWidth(0.5);
-      pdf.rect(mapX - 1, mapY - 1, mapWidth + 2, mapHeight + 2, 'S');
+      // Set white background for clean capture
+      const originalBg = mapRef.current.style.backgroundColor;
+      mapRef.current.style.backgroundColor = '#ffffff';
       
-      pdf.addImage(imgData, 'PNG', mapX, mapY, mapWidth, mapHeight);
+      // Brief wait for DOM update
+      await new Promise(resolve => setTimeout(resolve, 150));
       
-      drawScaleBar(pdf, mapX + 5, mapY + mapHeight - 18, scaleInfo, mapWidth, extent);
-      drawNorthArrow(pdf, mapX + mapWidth - 12, mapY + 12);
-      drawCoordinateLabels(pdf, mapX, mapY, mapWidth, mapHeight, extent);
+      try {
+        const canvas = await html2canvas(mapRef.current, {
+          useCORS: true,
+          allowTaint: false,
+          scale: 3, // Higher resolution for print quality
+          logging: false,
+          backgroundColor: '#ffffff',
+          onclone: (clonedDoc, clonedElement) => {
+            // Hide controls and pdf-hide elements
+            const controls = clonedDoc.querySelectorAll('.leaflet-control-container, .pdf-hide');
+            controls.forEach(control => {
+              (control as HTMLElement).style.display = 'none';
+            });
+          }
+        });
+        
+        const imgData = canvas.toDataURL('image/png');
+        const imgAspect = canvas.width / canvas.height;
+        
+        if (imgAspect > maxMapWidth / maxMapHeight) {
+          mapWidth = maxMapWidth;
+          mapHeight = mapWidth / imgAspect;
+        } else {
+          mapHeight = maxMapHeight;
+          mapWidth = mapHeight * imgAspect;
+        }
+        
+        pdf.setDrawColor(100, 100, 100);
+        pdf.setLineWidth(0.5);
+        pdf.rect(mapX - 1, mapY - 1, mapWidth + 2, mapHeight + 2, 'S');
+        
+        pdf.addImage(imgData, 'PNG', mapX, mapY, mapWidth, mapHeight);
+        
+        // Add note about data layers only
+        pdf.setFontSize(5);
+        pdf.setTextColor(120, 120, 120);
+        pdf.text('(Data layers only - basemap not included for compatibility)', mapX + 2, mapY + mapHeight - 2);
+        
+        drawScaleBar(pdf, mapX + 5, mapY + mapHeight - 20, scaleInfo, mapWidth, extent);
+        drawNorthArrow(pdf, mapX + mapWidth - 12, mapY + 12);
+        drawCoordinateLabels(pdf, mapX, mapY, mapWidth, mapHeight, extent);
+        
+      } finally {
+        // ALWAYS restore basemap layer
+        if (tilePane) {
+          tilePane.style.display = tilePaneOriginalDisplay;
+        }
+        mapRef.current.style.backgroundColor = originalBg;
+      }
       
     } catch (e) {
       console.warn('Could not capture map screenshot', e);
@@ -795,7 +831,9 @@ async function drawMapPage(
       pdf.rect(mapX, mapY, mapWidth, mapHeight, 'F');
       pdf.setTextColor(COLORS.textMuted[0], COLORS.textMuted[1], COLORS.textMuted[2]);
       pdf.setFontSize(10);
-      pdf.text('Map capture unavailable', mapX + mapWidth / 2 - 20, mapY + mapHeight / 2);
+      pdf.text('Map capture unavailable - please try again', mapX + mapWidth / 2 - 30, mapY + mapHeight / 2);
+      pdf.setFontSize(7);
+      pdf.text('If issue persists, check browser console for details.', mapX + mapWidth / 2 - 35, mapY + mapHeight / 2 + 8);
     }
   }
   
