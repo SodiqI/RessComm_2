@@ -103,8 +103,8 @@ function generateASCGrid(raster: RasterGrid): string {
   const header = [
     `ncols         ${width}`,
     `nrows         ${height}`,
-    `xllcorner     ${bounds.minLng.toFixed(10)}`,
-    `yllcorner     ${bounds.minLat.toFixed(10)}`,
+    `xllcenter     ${bounds.minLng.toFixed(10)}`,
+    `yllcenter     ${bounds.minLat.toFixed(10)}`,
     `cellsize      ${cellSize.toFixed(10)}`,
     `NODATA_value  ${noDataValue}`,
   ].join('\n');
