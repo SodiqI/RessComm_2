@@ -1120,7 +1120,9 @@ export async function exportMultiplePolygonsPdf(
     unit: 'mm',
     format: 'a4',
   });
-  
+
+  const brandLogo = await getBrandLogoDataUrl();
+
   const margin = PAGE.margin;
   const contentWidth = PAGE.width - margin * 2;
   let y = margin;
@@ -1128,6 +1130,7 @@ export async function exportMultiplePolygonsPdf(
   // === HEADER ===
   pdf.setFillColor(COLORS.primary[0], COLORS.primary[1], COLORS.primary[2]);
   pdf.rect(0, 0, PAGE.width, 18, 'F');
+  drawBrandLogo(pdf, brandLogo, PAGE.width, 18);
   
   pdf.setTextColor(255, 255, 255);
   pdf.setFontSize(14);
