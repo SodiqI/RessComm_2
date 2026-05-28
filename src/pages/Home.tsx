@@ -37,9 +37,11 @@ const Home = () => {
       <header className="fixed w-full top-0 z-50 bg-gradient-to-r from-forest-dark to-forest-mid text-white shadow-lg">
         <div className="container mx-auto px-6 py-4 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center">
-              <Leaf className="w-5 h-5 text-forest-light" />
-            </div>
+            <img
+              src={resscommLogo}
+              alt="RessComm Service Limited logo"
+              className="w-10 h-10 rounded-lg bg-white/95 p-1 object-contain"
+            />
             <span className="text-lg font-bold text-forest-light">RessComm Plotter</span>
           </Link>
           <nav className="hidden md:flex items-center gap-6">
