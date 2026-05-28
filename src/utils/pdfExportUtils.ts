@@ -404,7 +404,8 @@ function drawCoverPage(
   pdf: jsPDF,
   results: AnalysisResults,
   config: AnalysisConfig,
-  datasetName: string
+  datasetName: string,
+  brandLogo?: string | null,
 ) {
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
