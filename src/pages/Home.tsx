@@ -68,6 +68,11 @@ const Home = () => {
         </div>
         
         <div className="container mx-auto px-6 relative z-10 text-center">
+          <img
+            src={resscommLogo}
+            alt="RessComm Service Limited"
+            className="mx-auto mb-6 w-28 h-28 md:w-32 md:h-32 object-contain drop-shadow-2xl bg-white/95 rounded-2xl p-3"
+          />
           <h1 className="text-5xl md:text-6xl font-bold text-sage-light mb-6">
             RessComm Plotter
           </h1>
