@@ -1181,8 +1181,9 @@ export async function generateMultiPagePDF(
   
   onProgress?.(5, 'Generating cover page...');
   
+  const brandLogo = await getBrandLogoDataUrl();
   // Draw cover page first
-  drawCoverPage(pdf, results, config, datasetName);
+  drawCoverPage(pdf, results, config, datasetName, brandLogo);
   
   // Store original visibility
   const originalVisibility = { ...layerVisibility };
