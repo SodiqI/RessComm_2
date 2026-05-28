@@ -3,6 +3,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import type { AnalysisResults, AnalysisConfig, ColorScheme, LayerVisibility } from '@/types/spatial';
 import { getSchemeColors, getColorForClass } from './colorSchemes';
+import { getBrandLogoDataUrl } from './brandLogo';
 
 // Algorithm display names
 const ALGORITHM_NAMES: Record<string, string> = {
@@ -403,7 +404,8 @@ function drawCoverPage(
   pdf: jsPDF,
   results: AnalysisResults,
   config: AnalysisConfig,
-  datasetName: string
+  datasetName: string,
+  brandLogo?: string | null,
 ) {
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
@@ -417,16 +419,25 @@ function drawCoverPage(
   pdf.setFillColor(COLORS.forestLight[0], COLORS.forestLight[1], COLORS.forestLight[2]);
   pdf.rect(0, 45, pageWidth, 3, 'F');
   
-  // Logo text
+  // Brand logo + Logo text
+  let titleX = margin;
+  if (brandLogo) {
+    try {
+      pdf.addImage(brandLogo, 'PNG', margin, 6, 30, 30);
+      titleX = margin + 34;
+    } catch (e) {
+      console.warn('Could not embed brand logo in cover page:', e);
+    }
+  }
   pdf.setTextColor(255, 255, 255);
   pdf.setFontSize(24);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('ZULIM', margin, 22);
+  pdf.text('ZULIM', titleX, 22);
   
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
-  pdf.text('Spatial Analysis Report', margin, 32);
-  pdf.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), margin, 40);
+  pdf.text('Spatial Analysis Report', titleX, 32);
+  pdf.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), titleX, 40);
   
   // Analysis Type Badge (prominent)
   const badge = isSingleVariable ? 'SINGLE-VARIABLE INTERPOLATION' : 'PREDICTOR-BASED INTERPOLATION';
@@ -1170,8 +1181,9 @@ export async function generateMultiPagePDF(
   
   onProgress?.(5, 'Generating cover page...');
   
+  const brandLogo = await getBrandLogoDataUrl();
   // Draw cover page first
-  drawCoverPage(pdf, results, config, datasetName);
+  drawCoverPage(pdf, results, config, datasetName, brandLogo);
   
   // Store original visibility
   const originalVisibility = { ...layerVisibility };
@@ -1253,8 +1265,9 @@ export async function generateComprehensivePDF(
   
   onProgress?.(5, 'Generating summary page...');
   
+  const brandLogo = await getBrandLogoDataUrl();
   // Draw cover page first for single exports too
-  drawCoverPage(pdf, results, config, datasetName);
+  drawCoverPage(pdf, results, config, datasetName, brandLogo);
   
   onProgress?.(30, 'Capturing map...');
   

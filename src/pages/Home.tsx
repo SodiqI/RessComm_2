@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Map, Layers, ArrowRight, FileSpreadsheet, MousePointer, Download, Users, Leaf, Building } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
+import resscommLogo from '@/assets/resscomm-logo.png';
 
 const Home = () => {
   const [contactForm, setContactForm] = useState({ email: '', subject: '', message: '' });
@@ -36,9 +37,11 @@ const Home = () => {
       <header className="fixed w-full top-0 z-50 bg-gradient-to-r from-forest-dark to-forest-mid text-white shadow-lg">
         <div className="container mx-auto px-6 py-4 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center">
-              <Leaf className="w-5 h-5 text-forest-light" />
-            </div>
+            <img
+              src={resscommLogo}
+              alt="RessComm Service Limited logo"
+              className="w-10 h-10 rounded-lg bg-white/95 p-1 object-contain"
+            />
             <span className="text-lg font-bold text-forest-light">RessComm Plotter</span>
           </Link>
           <nav className="hidden md:flex items-center gap-6">
@@ -65,6 +68,11 @@ const Home = () => {
         </div>
         
         <div className="container mx-auto px-6 relative z-10 text-center">
+          <img
+            src={resscommLogo}
+            alt="RessComm Service Limited"
+            className="mx-auto mb-6 w-28 h-28 md:w-32 md:h-32 object-contain drop-shadow-2xl bg-white/95 rounded-2xl p-3"
+          />
           <h1 className="text-5xl md:text-6xl font-bold text-sage-light mb-6">
             RessComm Plotter
           </h1>
