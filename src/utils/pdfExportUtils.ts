@@ -1265,8 +1265,9 @@ export async function generateComprehensivePDF(
   
   onProgress?.(5, 'Generating summary page...');
   
+  const brandLogo = await getBrandLogoDataUrl();
   // Draw cover page first for single exports too
-  drawCoverPage(pdf, results, config, datasetName);
+  drawCoverPage(pdf, results, config, datasetName, brandLogo);
   
   onProgress?.(30, 'Capturing map...');
   
