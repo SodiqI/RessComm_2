@@ -1,13 +1,16 @@
 import { Link } from 'react-router-dom';
-import { Map, Home, Grid, FileSpreadsheet, Layers } from 'lucide-react';
+import { Home, Layers } from 'lucide-react';
+import resscommLogo from '@/assets/resscomm-logo.png';
 
 export function ZulimHeader() {
   return (
     <header className="zulim-header px-6 py-4 flex items-center justify-between shadow-lg">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center">
-          <Map className="w-5 h-5 text-forest-light" />
-        </div>
+        <img
+          src={resscommLogo}
+          alt="RessComm Service Limited"
+          className="w-10 h-10 rounded-lg bg-white/95 p-1 object-contain"
+        />
         <div>
           <h1 className="text-lg font-bold tracking-tight">ZULIM</h1>
           <p className="text-xs text-white/70">Zonation of Land Use Intensification Management</p>
