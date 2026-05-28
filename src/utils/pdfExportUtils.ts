@@ -3,6 +3,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import type { AnalysisResults, AnalysisConfig, ColorScheme, LayerVisibility } from '@/types/spatial';
 import { getSchemeColors, getColorForClass } from './colorSchemes';
+import { getBrandLogoDataUrl } from './brandLogo';
 
 // Algorithm display names
 const ALGORITHM_NAMES: Record<string, string> = {
