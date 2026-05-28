@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Map, Layers, ArrowRight, FileSpreadsheet, MousePointer, Download, Users, Leaf, Building } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
+import resscommLogo from '@/assets/resscomm-logo.png';
 
 const Home = () => {
   const [contactForm, setContactForm] = useState({ email: '', subject: '', message: '' });
