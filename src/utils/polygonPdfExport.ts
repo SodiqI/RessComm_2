@@ -762,7 +762,9 @@ export async function exportPolygonPdf(
     unit: 'mm',
     format: 'a4',
   });
-  
+
+  const brandLogo = await getBrandLogoDataUrl();
+
   const margin = PAGE.margin;
   const contentWidth = PAGE.width - margin * 2;
   let y = margin;
@@ -770,6 +772,7 @@ export async function exportPolygonPdf(
   // === HEADER SECTION ===
   pdf.setFillColor(COLORS.primary[0], COLORS.primary[1], COLORS.primary[2]);
   pdf.rect(0, 0, PAGE.width, 12, 'F');
+  drawBrandLogo(pdf, brandLogo, PAGE.width, 12);
   
   pdf.setTextColor(255, 255, 255);
   pdf.setFontSize(10);
@@ -781,7 +784,7 @@ export async function exportPolygonPdf(
   const dateStr = new Date().toLocaleDateString('en-US', { 
     year: 'numeric', month: 'short', day: 'numeric' 
   });
-  pdf.text(dateStr, PAGE.width - margin - 18, 8);
+  pdf.text(dateStr, PAGE.width - margin - 18, 11.5);
   
   y = 16;
   
