@@ -12,6 +12,20 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { getPlainTextAttribution, isBasemapCorsEnabled, getBasemapById } from './basemapConfig';
+import { getBrandLogoDataUrl } from './brandLogo';
+
+// Draw the RessComm brand logo into the colored header band of a polygon PDF.
+function drawBrandLogo(pdf: jsPDF, logo: string | null, pageWidth: number, bandHeight: number) {
+  if (!logo) return;
+  const size = Math.max(6, bandHeight - 2);
+  const x = pageWidth - size - 4;
+  const y = (bandHeight - size) / 2;
+  try {
+    pdf.addImage(logo, 'PNG', x, y, size, size);
+  } catch (e) {
+    console.warn('Could not embed brand logo:', e);
+  }
+}
 
 // Types
 export interface PolygonPoint {
