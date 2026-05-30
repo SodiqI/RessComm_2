@@ -4,112 +4,112 @@
 
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
-/* ZULIM - Forest/Earth GIS Professional Design System */
+/* RessComm - Brand-aligned GIS Professional Design System (Logo: Deep Blue + Orange) */
 
 @layer base {
   :root {
-    /* Forest Green Palette */
-    --background: 140 15% 97%;
-    --foreground: 150 40% 12%;
+    /* Soft cool-neutral canvas */
+    --background: 210 40% 98%;
+    --foreground: 210 50% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 150 40% 12%;
+    --card-foreground: 210 50% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 150 40% 12%;
+    --popover-foreground: 210 50% 12%;
 
-    /* Deep Forest Primary */
-    --primary: 152 44% 18%;
-    --primary-foreground: 140 30% 95%;
+    /* Deep Brand Blue (from logo) */
+    --primary: 207 100% 28%;
+    --primary-foreground: 210 40% 98%;
 
-    /* Soft Sage Secondary */
-    --secondary: 140 25% 94%;
-    --secondary-foreground: 152 44% 18%;
+    /* Soft Sky Secondary */
+    --secondary: 207 60% 94%;
+    --secondary-foreground: 207 100% 22%;
 
-    --muted: 140 15% 92%;
-    --muted-foreground: 150 15% 45%;
+    --muted: 210 30% 93%;
+    --muted-foreground: 210 20% 40%;
 
-    /* Earth Accent */
-    --accent: 145 50% 42%;
+    /* Vibrant Brand Orange Accent (from logo) */
+    --accent: 22 100% 50%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 140 20% 88%;
-    --input: 140 20% 88%;
-    --ring: 152 44% 18%;
+    --border: 210 30% 88%;
+    --input: 210 30% 88%;
+    --ring: 207 100% 35%;
 
     --radius: 0.5rem;
 
-    /* Sidebar - Forest theme */
-    --sidebar-background: 152 44% 18%;
-    --sidebar-foreground: 140 30% 92%;
-    --sidebar-primary: 145 50% 42%;
+    /* Sidebar - Brand blue */
+    --sidebar-background: 207 100% 20%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 22 100% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 152 35% 24%;
-    --sidebar-accent-foreground: 140 30% 95%;
-    --sidebar-border: 152 30% 25%;
-    --sidebar-ring: 145 50% 42%;
+    --sidebar-accent: 207 80% 28%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 207 60% 26%;
+    --sidebar-ring: 22 100% 55%;
 
-    /* Custom ZULIM Colors */
-    --forest-dark: 152 44% 18%;
-    --forest-mid: 145 40% 30%;
-    --forest-light: 145 50% 42%;
-    --sage: 140 25% 85%;
-    --sage-light: 140 30% 95%;
-    --earth-brown: 30 35% 40%;
-    --earth-tan: 35 30% 75%;
+    /* Brand Tokens (legacy "forest/sage/earth" names kept for backward compat) */
+    --forest-dark: 207 100% 20%;
+    --forest-mid: 207 90% 30%;
+    --forest-light: 204 90% 45%;
+    --sage: 207 55% 88%;
+    --sage-light: 207 70% 96%;
+    --earth-brown: 22 70% 38%;
+    --earth-tan: 30 90% 80%;
     --warning-amber: 40 95% 55%;
-    --info-teal: 175 60% 42%;
-    --success-green: 142 71% 45%;
+    --info-teal: 195 80% 42%;
+    --success-green: 145 65% 42%;
 
     /* Spatial Layer Colors */
-    --layer-continuous: 145 50% 42%;
-    --layer-classified: 200 80% 50%;
-    --layer-accuracy: 142 71% 45%;
-    --layer-residual: 25 95% 55%;
-    --layer-uncertainty: 280 70% 50%;
-    --layer-rpe: 0 70% 55%;
+    --layer-continuous: 207 100% 35%;
+    --layer-classified: 22 100% 50%;
+    --layer-accuracy: 145 65% 42%;
+    --layer-residual: 30 95% 55%;
+    --layer-uncertainty: 265 70% 55%;
+    --layer-rpe: 350 75% 52%;
   }
 
   .dark {
-    --background: 150 30% 8%;
-    --foreground: 140 20% 95%;
+    --background: 210 45% 8%;
+    --foreground: 210 30% 95%;
 
-    --card: 150 25% 12%;
-    --card-foreground: 140 20% 95%;
+    --card: 210 40% 12%;
+    --card-foreground: 210 30% 95%;
 
-    --popover: 150 25% 12%;
-    --popover-foreground: 140 20% 95%;
+    --popover: 210 40% 12%;
+    --popover-foreground: 210 30% 95%;
 
-    --primary: 145 50% 50%;
-    --primary-foreground: 150 30% 8%;
+    --primary: 204 95% 55%;
+    --primary-foreground: 210 45% 8%;
 
-    --secondary: 150 20% 18%;
-    --secondary-foreground: 140 20% 95%;
+    --secondary: 210 30% 18%;
+    --secondary-foreground: 210 30% 95%;
 
-    --muted: 150 15% 20%;
-    --muted-foreground: 140 15% 65%;
+    --muted: 210 25% 20%;
+    --muted-foreground: 210 20% 65%;
 
-    --accent: 145 50% 42%;
+    --accent: 22 100% 55%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 62% 45%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 150 20% 22%;
-    --input: 150 20% 22%;
-    --ring: 145 50% 50%;
+    --border: 210 25% 22%;
+    --input: 210 25% 22%;
+    --ring: 204 95% 55%;
 
-    --sidebar-background: 150 30% 6%;
-    --sidebar-foreground: 140 20% 92%;
-    --sidebar-primary: 145 50% 45%;
-    --sidebar-primary-foreground: 150 30% 8%;
-    --sidebar-accent: 150 20% 15%;
-    --sidebar-accent-foreground: 140 20% 95%;
-    --sidebar-border: 150 15% 18%;
-    --sidebar-ring: 145 50% 45%;
+    --sidebar-background: 210 50% 6%;
+    --sidebar-foreground: 210 30% 92%;
+    --sidebar-primary: 22 100% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 35% 15%;
+    --sidebar-accent-foreground: 210 30% 95%;
+    --sidebar-border: 210 25% 18%;
+    --sidebar-ring: 204 95% 55%;
   }
 }
 
@@ -251,12 +251,12 @@
 
 .leaflet-control-zoom a {
   background: white !important;
-  color: hsl(152, 44%, 18%) !important;
+  color: hsl(207, 100%, 28%) !important;
   border: none !important;
 }
 
 .leaflet-control-zoom a:hover {
-  background: hsl(140, 30%, 95%) !important;
+  background: hsl(207, 70%, 96%) !important;
 }
 
 .leaflet-popup-content-wrapper {
