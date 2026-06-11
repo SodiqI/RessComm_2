@@ -95,6 +95,44 @@ function gridToRaster(grid: GridCell[], valueField: keyof GridCell = 'value'): R
 }
 
 /**
+ * Generate GeoTIFF binary (ArrayBuffer) from a raster grid.
+ * Uses Float32 samples in WGS84 (EPSG:4326) with GDAL_NODATA tag.
+ */
+async function generateGeoTIFF(raster: RasterGrid): Promise<ArrayBuffer> {
+  const { width, height, data, noDataValue, bounds, cellSize } = raster;
+
+  // Flatten row-major (north -> south, west -> east), use Float32 for precision/size
+  const values = new Float32Array(width * height);
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      values[row * width + col] = data[row][col];
+    }
+  }
+
+  // PixelIsArea: tiepoint is the upper-left corner of the upper-left pixel
+  const originX = bounds.minLng - cellSize / 2;
+  const originY = bounds.maxLat + cellSize / 2;
+
+  const metadata: Record<string, unknown> = {
+    width,
+    height,
+    BitsPerSample: [32],
+    SampleFormat: [3], // 3 = IEEE floating point
+    SamplesPerPixel: 1,
+    PhotometricInterpretation: 1,
+    ModelPixelScale: [cellSize, cellSize, 0],
+    ModelTiepoint: [0, 0, 0, originX, originY, 0],
+    GeographicTypeGeoKey: 4326,
+    GTModelTypeGeoKey: 2,
+    GTRasterTypeGeoKey: 1,
+    GeogCitationGeoKey: 'WGS 84',
+    GDAL_NODATA: `${noDataValue}`,
+  };
+
+  return (await writeArrayBuffer(values, metadata)) as ArrayBuffer;
+}
+
+/**
  * Generate ESRI ASCII Grid (.asc) format
  * This format is widely supported by ArcGIS, QGIS, and other GIS software
  */
