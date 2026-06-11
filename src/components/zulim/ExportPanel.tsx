@@ -308,10 +308,11 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, set
           <div className="mt-3 p-3 bg-sage-light rounded-lg text-xs text-muted-foreground">
             <p className="font-medium text-foreground mb-1">Export Notes:</p>
             <ul className="space-y-1 list-disc list-inside">
-              <li>Raster exports include .asc + .prj + metadata</li>
+              <li>GeoTIFF (.tif) is the primary format - fully georeferenced</li>
+              <li>ASCII Grid (.asc) + .prj included as a fallback</li>
               <li>Compatible with ArcGIS, QGIS & other GIS</li>
               <li>Uses WGS84 (EPSG:4326) coordinate system</li>
-              <li>NoData value: -9999</li>
+              <li>NoData value: -9999 (Float32)</li>
             </ul>
           </div>
         </CollapsibleContent>
