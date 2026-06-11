@@ -1,8 +1,10 @@
 /**
  * Raster Export Utility for ZULIM
- * Generates downloadable raster files in multiple formats for GIS compatibility
+ * Generates downloadable raster files in GeoTIFF (primary) and ESRI ASCII Grid formats
+ * for maximum compatibility with GIS software (ArcGIS, QGIS, etc.)
  */
 
+import { writeArrayBuffer } from 'geotiff';
 import type { GridCell, AnalysisConfig, AnalysisResults } from '@/types/spatial';
 
 interface RasterBounds {
