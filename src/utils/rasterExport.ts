@@ -418,5 +418,6 @@ export async function exportLayerAsRaster(
     throw new Error(`No data available for ${layerName}`);
   }
   
-  await exportAsASCGrid(grid, layerName, config, results, valueField);
+  await exportAsGeoTIFF(grid, layerName, config, results, valueField);
 }
+
