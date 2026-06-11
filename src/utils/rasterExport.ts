@@ -1,8 +1,10 @@
 /**
  * Raster Export Utility for ZULIM
- * Generates downloadable raster files in multiple formats for GIS compatibility
+ * Generates downloadable raster files in GeoTIFF (primary) and ESRI ASCII Grid formats
+ * for maximum compatibility with GIS software (ArcGIS, QGIS, etc.)
  */
 
+import { writeArrayBuffer } from 'geotiff';
 import type { GridCell, AnalysisConfig, AnalysisResults } from '@/types/spatial';
 
 interface RasterBounds {
@@ -90,6 +92,44 @@ function gridToRaster(grid: GridCell[], valueField: keyof GridCell = 'value'): R
     bounds,
     cellSize,
   };
+}
+
+/**
+ * Generate GeoTIFF binary (ArrayBuffer) from a raster grid.
+ * Uses Float32 samples in WGS84 (EPSG:4326) with GDAL_NODATA tag.
+ */
+async function generateGeoTIFF(raster: RasterGrid): Promise<ArrayBuffer> {
+  const { width, height, data, noDataValue, bounds, cellSize } = raster;
+
+  // Flatten row-major (north -> south, west -> east), use Float32 for precision/size
+  const values = new Float32Array(width * height);
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      values[row * width + col] = data[row][col];
+    }
+  }
+
+  // PixelIsArea: tiepoint is the upper-left corner of the upper-left pixel
+  const originX = bounds.minLng - cellSize / 2;
+  const originY = bounds.maxLat + cellSize / 2;
+
+  const metadata: Record<string, unknown> = {
+    width,
+    height,
+    BitsPerSample: [32],
+    SampleFormat: [3], // 3 = IEEE floating point
+    SamplesPerPixel: 1,
+    PhotometricInterpretation: 1,
+    ModelPixelScale: [cellSize, cellSize, 0],
+    ModelTiepoint: [0, 0, 0, originX, originY, 0],
+    GeographicTypeGeoKey: 4326,
+    GTModelTypeGeoKey: 2,
+    GTRasterTypeGeoKey: 1,
+    GeogCitationGeoKey: 'WGS 84',
+    GDAL_NODATA: `${noDataValue}`,
+  };
+
+  return (await writeArrayBuffer(values, metadata)) as ArrayBuffer;
 }
 
 /**
@@ -237,51 +277,52 @@ function getLayerDescription(layerName: string): string {
 }
 
 /**
- * Download multiple files as a package
+ * Download GeoTIFF + ASCII Grid sidecars as a single zip package
  */
 async function downloadRasterPackage(
+  tifBuffer: ArrayBuffer,
   ascContent: string,
   prjContent: string,
   xmlContent: string,
-  filename: string
+  baseName: string
 ): Promise<void> {
-  // Import JSZip dynamically
   const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
-  
-  const baseName = filename.replace('.asc', '');
-  
-  // Add files to zip
-  zip.file(`${baseName}.asc`, ascContent);
+
+  // Primary: GeoTIFF (recommended for GIS)
+  zip.file(`${baseName}.tif`, tifBuffer);
+  // Sidecar projection file (some tools read .tfw/.prj alongside .tif)
   zip.file(`${baseName}.prj`, prjContent);
+  // Optional: ASCII Grid fallback for tools that prefer plain text
+  zip.file(`${baseName}.asc`, ascContent);
+  // FGDC metadata
   zip.file(`${baseName}.xml`, xmlContent);
-  
-  // Add README
+
   const readme = `ZULIM Raster Export
 ==================
 
 This package contains:
-- ${baseName}.asc - ESRI ASCII Grid raster file
-- ${baseName}.prj - Projection file (WGS84/EPSG:4326)
+- ${baseName}.tif - GeoTIFF raster (RECOMMENDED, georeferenced WGS84)
+- ${baseName}.prj - Projection sidecar (WGS84 / EPSG:4326)
+- ${baseName}.asc - ESRI ASCII Grid (text fallback)
 - ${baseName}.xml - FGDC-compliant metadata
 
-Usage in ArcGIS:
-1. Add the .asc file directly to your map
-2. The .prj file will be automatically recognized
-3. Use "ASCII to Raster" tool for conversion to other formats
+Usage in ArcGIS / ArcGIS Pro:
+1. Drag and drop ${baseName}.tif into your map - it is fully georeferenced
+2. Symbology can be adjusted via Layer Properties
 
 Usage in QGIS:
-1. Drag and drop the .asc file into QGIS
-2. The projection will be automatically applied
+1. Drag and drop ${baseName}.tif into the canvas
+2. Projection (EPSG:4326) is embedded in the GeoTIFF tags
 
 Coordinate System: WGS 84 (EPSG:4326)
 NoData Value: -9999
+Data Type: 32-bit Float (single band)
 
 Generated: ${new Date().toISOString()}
 `;
   zip.file('README.txt', readme);
-  
-  // Generate and download zip
+
   const blob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -292,9 +333,9 @@ Generated: ${new Date().toISOString()}
 }
 
 /**
- * Export grid data as ASCII Grid raster package
+ * Export grid data as a GeoTIFF raster package (with ASCII Grid sidecar)
  */
-export async function exportAsASCGrid(
+export async function exportAsGeoTIFF(
   grid: GridCell[],
   layerName: string,
   config: AnalysisConfig,
@@ -303,20 +344,25 @@ export async function exportAsASCGrid(
 ): Promise<void> {
   try {
     const raster = gridToRaster(grid, valueField);
-    
+
+    const tifBuffer = await generateGeoTIFF(raster);
     const ascContent = generateASCGrid(raster);
     const prjContent = generatePRJ();
     const xmlContent = generateMetadataXML(layerName, config, results, raster);
-    
+
     const dateStr = new Date().toISOString().split('T')[0];
-    const filename = `${config.algorithm.toUpperCase()}_${layerName}_${dateStr}.asc`;
-    
-    await downloadRasterPackage(ascContent, prjContent, xmlContent, filename);
+    const baseName = `${config.algorithm.toUpperCase()}_${layerName}_${dateStr}`;
+
+    await downloadRasterPackage(tifBuffer, ascContent, prjContent, xmlContent, baseName);
   } catch (error) {
-    console.error('ASCII Grid export error:', error);
+    console.error('GeoTIFF export error:', error);
     throw new Error(`Failed to export raster: ${(error as Error).message}`);
   }
 }
+
+/** Backwards-compatible alias */
+export const exportAsASCGrid = exportAsGeoTIFF;
+
 
 /**
  * Export specific layer type as ASCII Grid raster
@@ -372,5 +418,6 @@ export async function exportLayerAsRaster(
     throw new Error(`No data available for ${layerName}`);
   }
   
-  await exportAsASCGrid(grid, layerName, config, results, valueField);
+  await exportAsGeoTIFF(grid, layerName, config, results, valueField);
 }
+
