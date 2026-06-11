@@ -54,19 +54,19 @@ export function ExportPanel({ results, config, colorScheme, layerVisibility, set
   // Define export options based on analysis type
   const singleVariableExports: ExportOption[] = [
     { id: 'full-pdf', label: 'Full Multi-Page PDF', description: '4 pages: Surface, Classified, Accuracy, RPE', format: 'pdf', available: true },
-    { id: 'interpolated', label: 'Interpolated Raster', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: true },
-    { id: 'classified', label: 'Classified Map', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: !!results.classified },
-    { id: 'accuracy', label: 'Accuracy Surface', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: !!results.accuracy },
-    { id: 'rpe', label: 'RPE Layer', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: !!results.rpe },
+    { id: 'interpolated', label: 'Interpolated Raster', description: 'GeoTIFF (.tif) + ASCII Grid + Metadata', format: 'geotiff', available: true },
+    { id: 'classified', label: 'Classified Map', description: 'GeoTIFF (.tif) + ASCII Grid + Metadata', format: 'geotiff', available: !!results.classified },
+    { id: 'accuracy', label: 'Accuracy Surface', description: 'GeoTIFF (.tif) + ASCII Grid + Metadata', format: 'geotiff', available: !!results.accuracy },
+    { id: 'rpe', label: 'RPE Layer', description: 'GeoTIFF (.tif) + ASCII Grid + Metadata', format: 'geotiff', available: !!results.rpe },
     { id: 'single-pdf', label: 'Current Layer PDF', description: 'Single page with active layer', format: 'pdf', available: true },
   ];
 
   const predictorExports: ExportOption[] = [
     { id: 'full-pdf', label: 'Full Multi-Page PDF', description: '5 pages: Surface, Residuals, Uncertainty, RPE, Features', format: 'pdf', available: true },
-    { id: 'predicted', label: 'Predicted Surface', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: true },
-    { id: 'residuals', label: 'Residual Map', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: !!results.residuals },
-    { id: 'uncertainty', label: 'Uncertainty Map', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: !!results.uncertainty },
-    { id: 'rpe', label: 'RPE Layer', description: 'ASCII Grid (.asc) + PRJ + Metadata', format: 'geotiff', available: !!results.rpe },
+    { id: 'predicted', label: 'Predicted Surface', description: 'GeoTIFF (.tif) + ASCII Grid + Metadata', format: 'geotiff', available: true },
+    { id: 'residuals', label: 'Residual Map', description: 'GeoTIFF (.tif) + ASCII Grid + Metadata', format: 'geotiff', available: !!results.residuals },
+    { id: 'uncertainty', label: 'Uncertainty Map', description: 'GeoTIFF (.tif) + ASCII Grid + Metadata', format: 'geotiff', available: !!results.uncertainty },
+    { id: 'rpe', label: 'RPE Layer', description: 'GeoTIFF (.tif) + ASCII Grid + Metadata', format: 'geotiff', available: !!results.rpe },
     { id: 'importance', label: 'Feature Importance', description: 'Variable rankings (CSV)', format: 'csv', available: !!results.featureImportance },
     { id: 'single-pdf', label: 'Current Layer PDF', description: 'Single page with active layer', format: 'pdf', available: true },
   ];
